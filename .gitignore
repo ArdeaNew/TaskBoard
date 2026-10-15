@@ -1,0 +1,23 @@
+artifacts/
+obj/
+.vs/
+qa-data/
+dist/
+bin/
+*.user
+*.suo
+
+# Local assistant/editor state and environment files.
+.codex/
+.agents/
+.env
+.env.*
+!.env.example
+
+# Personal task data copied into the repository and temporary output.
+board*.json
+*.log
+*.tmp
+*.bak
+Thumbs.db
+.DS_Store
