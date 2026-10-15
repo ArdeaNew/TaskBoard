@@ -33,10 +33,10 @@ Record the version, binary size, actual passing counts, and unverified areas in 
 powershell -NoProfile -ExecutionPolicy Bypass -File .\package.ps1
 ```
 
-- `dist/TaskBoard-1.4.0-portable.zip`：仅 `TaskBoard.exe`、`TaskBoard.exe.config`、`README.txt`、`LICENSE`。
-  `dist/TaskBoard-1.4.0-portable.zip`: only `TaskBoard.exe`, `TaskBoard.exe.config`, `README.txt`, and `LICENSE`.
-- `dist/TaskBoard-1.4.0-source.zip`：源码、脚本、图标、测试与中英文说明；排除 `.git`、`artifacts`、`qa-data`、`dist`、缓存、个人数据与截图。
-  `dist/TaskBoard-1.4.0-source.zip`: source, scripts, icons, tests, and bilingual guides; exclude `.git`, `artifacts`, `qa-data`, `dist`, caches, personal data, and screenshots.
+- `dist/TaskBoard-1.4.1-portable.zip`：仅 `TaskBoard.exe`、`TaskBoard.exe.config`、`README.txt`、`LICENSE`。
+  `dist/TaskBoard-1.4.1-portable.zip`: only `TaskBoard.exe`, `TaskBoard.exe.config`, `README.txt`, and `LICENSE`.
+- `dist/TaskBoard-1.4.1-source.zip`：源码、脚本、图标、测试与中英文说明；排除 `.git`、`artifacts`、`qa-data`、`dist`、缓存、个人数据与截图。
+  `dist/TaskBoard-1.4.1-source.zip`: source, scripts, icons, tests, and bilingual guides; exclude `.git`, `artifacts`, `qa-data`, `dist`, caches, personal data, and screenshots.
 - 用 `Get-FileHash -Algorithm SHA256` 复核 `dist/SHA256SUMS.txt`；确认版本、嵌入图标及 ZIP 内容。检查源码及附件不含真实任务、备份或导出文件。
   Verify `dist/SHA256SUMS.txt` with `Get-FileHash -Algorithm SHA256`, then check the version, embedded icon, and archive contents. Ensure source and assets contain no real tasks, backups, or exports.
 

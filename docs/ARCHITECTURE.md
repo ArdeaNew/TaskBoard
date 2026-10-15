@@ -98,9 +98,9 @@ PNG encodes the same page at 192 DPI through a same-directory temporary file and
 
 The app contains no HTTP, sockets, telemetry, automatic updater, or embedded web content. Build/package scripts download no dependencies; XML namespace URLs are identifiers. Windows and user configuration determine whether selected print queues or file paths use a network. The app itself uploads nothing.
 
-预装 .NET SDK 10 与 Framework 4.8 Developer Pack 后，`build.ps1 -Test` 运行四组检查。`package.ps1` 生成 `TaskBoard-1.4.0-portable.zip`、`TaskBoard-1.4.0-source.zip` 和 `SHA256SUMS.txt`；便携包只含程序、配置、说明和许可证，源码包按白名单排除数据及构建产物。
+预装 .NET SDK 10 与 Framework 4.8 Developer Pack 后，`build.ps1 -Test` 运行四组检查。`package.ps1` 生成 `TaskBoard-1.4.1-portable.zip`、`TaskBoard-1.4.1-source.zip` 和 `SHA256SUMS.txt`；便携包只含程序、配置、说明和许可证，源码包按白名单排除数据及构建产物。
 
-With .NET SDK 10 and Framework 4.8 Developer Pack installed, `build.ps1 -Test` runs four suites. `package.ps1` produces `TaskBoard-1.4.0-portable.zip`, `TaskBoard-1.4.0-source.zip`, and `SHA256SUMS.txt`. The portable package holds only the app, configuration, guide, and license; a source allowlist excludes data and build output.
+With .NET SDK 10 and Framework 4.8 Developer Pack installed, `build.ps1 -Test` runs four suites. `package.ps1` produces `TaskBoard-1.4.1-portable.zip`, `TaskBoard-1.4.1-source.zip`, and `SHA256SUMS.txt`. The portable package holds only the app, configuration, guide, and license; a source allowlist excludes data and build output.
 
 GitHub Actions 在推送、拉取请求或手动触发时构建、检查并保存附件，无 Release 发布步骤。本地构建和打包不会上传；实际检查结果见 [VALIDATION.md](../VALIDATION.md)。
 

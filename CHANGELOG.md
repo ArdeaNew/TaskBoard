@@ -1,5 +1,10 @@
 # 更新记录 / Changelog
 
+## 1.4.1 — 2026-10-15
+
+- 修正小屏幕环境下拖拽检查对滚动位置的假设，覆盖窄列中滚动至任务末尾后跨天放置的情况。
+  Correct the drag check's scroll-position assumption on small displays, covering cross-day placement after scrolling to the task list's end in narrow columns.
+
 ## 1.4.0 — 2026-10-15
 
 - 修复空白点击新增位置不可预测：始终追加到当天末尾；待办保留用户顺序，日常任务不再持续强制置底，完成任务仍置顶。

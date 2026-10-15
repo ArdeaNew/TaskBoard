@@ -1,13 +1,13 @@
 # 验证记录 / Validation
 
-2026-10-15，TaskBoard 1.4.0，Windows，.NET Framework 4.8。 / TaskBoard 1.4.0 on Windows, targeting .NET Framework 4.8.
+2026-10-15，TaskBoard 1.4.1，Windows，.NET Framework 4.8。 / TaskBoard 1.4.1 on Windows, targeting .NET Framework 4.8.
 
 | 检查 / Check | 结果 / Result |
 | --- | --- |
 | Release 构建 / Release build | 无警告；主程序 102,400 bytes，配置 347 bytes；零第三方依赖。 / No warnings; app 102,400 bytes, config 347 bytes; no third-party dependencies. |
 | 核心与存储 / Core and storage | 32 项通过：日期、迁移、恢复、归档、完成置顶、混合待办顺序、日常副本与背景。 / 32 passed: dates, migration, recovery, archives, completed-first sorting, mixed pending order, daily copies, and backgrounds. |
 | 页面绘制 / Page rendering | 787 项通过：英文星期与日期标签、ISO 跨年边界、剩余百分比、矢量轮廓、背景、硬边距及密集任务。 / 787 passed: English days/date labels, ISO year boundaries, remaining percentages, vector outlines, fills, hard margins, and dense tasks. |
-| WPF 控件 / WPF controls | 164 项通过：真实空白区连续点击追加、取消草稿、保存重开、撤销、日常排序、跨天拖拽、英文界面、窄窗口及默认取消的确认框。 / 164 passed: repeated blank-area appends, draft cancellation, save/reopen, undo, daily ordering, cross-day dragging, English UI, narrow windows, and default-cancel confirmation. |
+| WPF 控件 / WPF controls | 189 项通过：默认及最小窗口下的真实空白区连续点击追加、取消草稿、保存重开、撤销、日常排序、滚动到末尾后的跨天拖拽、英文界面及默认取消的确认框。 / 189 passed: repeated blank-area appends at default and minimum sizes, draft cancellation, save/reopen, undo, daily ordering, cross-day dragging after scrolling to the end, English UI, and default-cancel confirmation. |
 | 打印流程 / Print pipeline | 94 项通过：单页固定文档、预览缩放、纸张能力和默认队列失败回退；XPS 写入重开后文字与背景保留，无位图或字体资源依赖。 / 94 passed: fixed page, preview zoom, media capabilities, and default-queue failure fallback; XPS round-trip preserves text and fills without bitmap or font-resource dependencies. |
 
 已检查虚构任务的软件渲染图，包括最小宽度看板、打印预览和拖拽。最小宽度下，`This week` 与剩余百分比无重叠，`Clear day` 适合列宽。检查不显示窗口、不捕获鼠标、不注入桌面输入，也不提交打印作业。

@@ -38,6 +38,7 @@ namespace TaskBoard.Tests
                 Assert(Math.Abs(window.Width - Math.Max(window.MinWidth, SystemParameters.WorkArea.Width * .7)) < 1, "Width uses 70% of work area.");
                 Assert(Math.Abs(window.Height - Math.Max(window.MinHeight, SystemParameters.WorkArea.Height * .7)) < 1, "Height uses 70% of work area.");
                 AssertBottomAppending(Path.Combine(directory, "bottom-append"));
+                AssertBottomAppending(Path.Combine(directory, "bottom-append-minimum"), true);
                 Layout(window);
                 var state = Field<BoardState>(window, "state");
                 var panels = Field<ColumnPanel[]>(window, "columns");
@@ -155,7 +156,7 @@ namespace TaskBoard.Tests
             root.UpdateLayout();
         }
 
-        private static void AssertBottomAppending(string directory)
+        private static void AssertBottomAppending(string directory, bool minimumSize = false)
         {
             var initial = new BoardState
             {
@@ -175,6 +176,7 @@ namespace TaskBoard.Tests
             try
             {
                 window = new MainWindow(store);
+                if (minimumSize) { window.Width = window.MinWidth; window.Height = window.MinHeight; }
                 Layout(window);
                 var state = Field<BoardState>(window, "state");
                 var panels = Field<ColumnPanel[]>(window, "columns");
@@ -218,6 +220,7 @@ namespace TaskBoard.Tests
 
                 window.Close();
                 window = new MainWindow(store);
+                if (minimumSize) { window.Width = window.MinWidth; window.Height = window.MinHeight; }
                 Layout(window);
                 state = Field<BoardState>(window, "state");
                 panels = Field<ColumnPanel[]>(window, "columns");
@@ -250,11 +253,18 @@ namespace TaskBoard.Tests
                 SetPointer(window, normal.TranslatePoint(new Point(12, 12), Field<Grid>(window, "surface")));
                 Invoke(Drag(window), "StartDragVisuals", normal);
                 var scroller = Field<ScrollViewer[]>(window, "scrollers")[1];
+                // On small desktops the final task can extend below the
+                // viewport. Scroll to its actual end before targeting its tail.
+                scroller.ScrollToEnd();
+                Layout(window);
                 SetPointer(window, scroller.TranslatePoint(new Point(12, scroller.ActualHeight - 4), Field<Grid>(window, "surface")));
                 Invoke(Drag(window), "UpdateDropTarget");
                 Assert(Field<int>(Drag(window), "targetColumn") == 1 &&
                     ((TaskCard)Field<Border>(Drag(window), "ghost").Child).Ordinal == 3,
-                    "An ordinary cross-day drop can target the bottom below a daily task.");
+                    "An ordinary cross-day drop can target the bottom below a daily task. Target=" +
+                    Field<int>(Drag(window), "targetColumn") + ", ordinal=" +
+                    ((TaskCard)Field<Border>(Drag(window), "ghost").Child).Ordinal + ", viewport=" +
+                    scroller.ViewportHeight + ", extent=" + scroller.ExtentHeight + ", offset=" + scroller.VerticalOffset);
                 Invoke(Drag(window), "FinishDrag", true);
                 Invoke(Drag(window), "CompleteDropAnimation");
                 Assert(panels[1].Children.OfType<TaskCard>().Last().Item.Id == "first-normal" &&

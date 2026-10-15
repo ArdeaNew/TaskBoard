@@ -1,8 +1,8 @@
 # 安全与本地数据 / Security and local data
 
-当前版本为 1.4.0，运行于 Windows 和 .NET Framework 4.8。应用不发送网络请求，无账号、遥测或云同步；打印由 Windows 打印系统处理。
+当前版本为 1.4.1，运行于 Windows 和 .NET Framework 4.8。应用不发送网络请求，无账号、遥测或云同步；打印由 Windows 打印系统处理。
 
-The current version is 1.4.0 for Windows and .NET Framework 4.8. The app makes no network requests and has no accounts, telemetry, or cloud sync. Windows handles printing.
+The current version is 1.4.1 for Windows and .NET Framework 4.8. The app makes no network requests and has no accounts, telemetry, or cloud sync. Windows handles printing.
 
 任务及备份默认保存在 `%LOCALAPPDATA%\TaskBoard`，可通过 `--data-dir` 指定目录。数据为未加密的 JSON，访问权限取决于 Windows 账户及目录。旧字段仅作不透明兼容数据保留。导出文件保存在用户选择的位置。
 
