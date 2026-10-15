@@ -18,6 +18,7 @@ namespace TaskBoard.UI
             var metrics = DateMetrics.From(selected);
             var dialog = new SaveFileDialog
             {
+                Title = "Export image",
                 Filter = "PNG (*.png)|*.png", DefaultExt = ".png", AddExtension = true,
                 FileName = "TaskBoard-" + metrics.WeekYear.ToString(CultureInfo.InvariantCulture) +
                     "-W" + metrics.WeekNumber.ToString("00", CultureInfo.InvariantCulture) + ".png"
@@ -26,7 +27,7 @@ namespace TaskBoard.UI
             try { Save(state, dialog.FileName); }
             catch (Exception error)
             {
-                MessageBox.Show(owner, "导出失败：" + error.Message, "Task", MessageBoxButton.OK, MessageBoxImage.Error);
+                BoardDialog.Show(owner, "Export failed: " + error.Message, "Export image");
             }
         }
 

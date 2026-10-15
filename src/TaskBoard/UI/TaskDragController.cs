@@ -257,10 +257,8 @@ namespace TaskBoard.UI
             }
             var peers = panel.Children.OfType<TaskCard>().ToList();
             int completedCount = peers.Count(t => t.Item.IsCompleted);
-            int normalCount = peers.Count(t => !t.Item.IsCompleted && !t.Item.IsDaily);
             if (dragged.Item.IsCompleted) index = Math.Min(index, completedCount);
-            else if (dragged.Item.IsDaily) index = Math.Max(index, completedCount + normalCount);
-            else index = Math.Max(completedCount, Math.Min(index, completedCount + normalCount));
+            else index = Math.Max(completedCount, index);
             int current = columns[targetColumn].Children.IndexOf(gap);
             if (column == targetColumn && current == index)
             {

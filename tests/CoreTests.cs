@@ -30,7 +30,7 @@ internal static class CoreTests
         Run("Daily application retains source and creates one last item per day", DailyApplication);
         Run("Daily application is idempotent and repairs missing or duplicate copies", DailyApplicationRepair);
         Run("Daily edits sync their group and cloning preserves membership", DailySyncAndClone);
-        Run("Task arrangement is stable and keeps normal tasks before daily tasks", DailyArrangement);
+        Run("Task arrangement preserves the mixed pending order and bottom additions", DailyArrangement);
         Run("Completed tasks sort first with stable pending ordinary and routine order", CompletionArrangement);
         Run("Routine completion is independent per day and survives reapplication", DailyCompletionIndependence);
         Run("Completion flags survive JSON and cloning with false legacy defaults", CompletionPersistence);
@@ -377,13 +377,13 @@ internal static class CoreTests
             }
         };
         BoardOperations.ArrangeTasks(state);
-        const string expected = "normal-a,normal-b,daily-b,daily-a,tuesday-normal,tuesday-daily";
-        Equal(expected, string.Join(",", state.Tasks.Select(t => t.Id)), "stable category order");
+        const string expected = "daily-b,normal-a,daily-a,normal-b,tuesday-normal,tuesday-daily";
+        Equal(expected, string.Join(",", state.Tasks.Select(t => t.Id)), "stable mixed pending order");
         BoardOperations.ArrangeTasks(state);
         Equal(expected, string.Join(",", state.Tasks.Select(t => t.Id)), "arrangement idempotent");
         state.Tasks.Add(new TaskItem { Id = "new-normal", Column = 1 });
         BoardOperations.ArrangeTasks(state);
-        Equal("normal-a,normal-b,new-normal,daily-b,daily-a", string.Join(",", state.Tasks.Where(t => t.Column == 1).Select(t => t.Id)), "new normal task remains above routines");
+        Equal("daily-b,normal-a,daily-a,normal-b,new-normal", string.Join(",", state.Tasks.Where(t => t.Column == 1).Select(t => t.Id)), "new normal task stays below existing routines");
     }
 
     private static void CompletionArrangement()
@@ -404,10 +404,10 @@ internal static class CoreTests
             }
         };
         BoardOperations.ArrangeTasks(state);
-        const string expected = "completed-normal-a,completed-daily,completed-normal-b,pending-normal-a,pending-normal-b,pending-daily-a,pending-daily-b,tuesday-completed,tuesday-pending";
-        Equal(expected, string.Join(",", state.Tasks.Select(t => t.Id)), "three stable categories per day");
+        const string expected = "completed-normal-a,completed-daily,completed-normal-b,pending-daily-a,pending-normal-a,pending-daily-b,pending-normal-b,tuesday-completed,tuesday-pending";
+        Equal(expected, string.Join(",", state.Tasks.Select(t => t.Id)), "completed first with stable mixed pending order");
         BoardOperations.ArrangeTasks(state);
-        Equal(expected, string.Join(",", state.Tasks.Select(t => t.Id)), "three category arrangement idempotent");
+        Equal(expected, string.Join(",", state.Tasks.Select(t => t.Id)), "completion partition is idempotent");
         TaskItem justCompleted = state.Tasks.Single(t => t.Id == "pending-normal-b");
         state.Tasks.Remove(justCompleted);
         justCompleted.IsCompleted = true;

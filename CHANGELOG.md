@@ -1,42 +1,48 @@
-# 更新记录
+# 更新记录 / Changelog
+
+## 1.4.0 — 2026-10-15
+
+- 修复空白点击新增位置不可预测：始终追加到当天末尾；待办保留用户顺序，日常任务不再持续强制置底，完成任务仍置顶。
+  Fix unpredictable blank-space insertion: always append to the day's end. Pending tasks retain user order, daily tasks are no longer continually forced to the bottom, and completed tasks remain at the top.
+- 应用界面统一为英文，包含星期、菜单、清空按钮、预览与确认框；用 **This week** 替代房屋图标，清空按钮显示 **Clear day**。
+  Use English throughout the app, including day labels, menus, clear actions, preview, and confirmations. Replace the home icon with **This week** and label the footer **Clear day**.
+- 界面、打印及图片共用日期标签；突出 ISO 周数和按系统当天计算、包含今天的月余/年余百分比。使用说明与开发文档改为中英文对照。
+  Share date labels across screen, print, and images. Highlight ISO week numbers and month/year remaining based on today, including today. Provide bilingual user and developer documentation.
 
 ## 1.3.0 — 2026-10-15
 
-- 新增整页打印预览，支持缩放、适合页面和打印机选择。
-- 打印文字改用矢量轮廓，修复星期标题丢失；预览和固定文档共用同一页面，保留 A4 横向与硬边距适配。
-- 任务右键新增背景色，可选择预设、自定义色值或清除，填满整个区块；编辑、拖拽、撤销、归档、PNG 和打印保持一致。
-- 日常任务各天背景色独立；新副本继承源任务背景，新周继承对应星期的背景。
-- 提取共享调色板、极简按钮、页面视图和打印文档适配，增加 XPS 输出往返检查，不新增第三方依赖。
+- 添加整页打印预览、缩放、适合页面与打印机选择；文字采用矢量轮廓，修复星期标题缺失，保留 A4 横向与硬边距适配。
+  Add full-page preview, zoom, fit, and printer selection. Use vector text outlines to fix missing day headers, retaining A4 landscape and hard-margin handling.
+- 任务右击支持整块背景预设、自定义和清除；编辑、拖拽、撤销、归档及输出保持一致，各天日常背景独立。
+  Add full-block background presets, custom colors, and clearing. Keep fills consistent through editing, dragging, undo, archives, and output, with independent daily fills.
+- 提取共享调色板、按钮、页面视图和打印适配，增加 XPS 往返检查，无新增第三方依赖。
+  Extract shared palettes, buttons, page views, and print adapters; add XPS round-trip checks without third-party dependencies.
 
 ## 1.2.1 — 2026-10-15
 
-- 删除废弃记录模型、格式化和新增逻辑，以及未使用的窗口尺寸偏好。
-- 拆分 Core、Persistence、Rendering 和 UI，拖拽状态移至独立控制器。
-- 页面绘制与系统打印分离，打印和图片导出共用绘制模块。
-- 项目文件统一声明构建依赖，核心及绘制检查只引用所属层，移除未使用的自动化引用。
-- 删除重复预览入口；构建输出按 app/tests 分开，添加安全清理及旧版本整理。
-- 旧 JSON 字段作为不透明兼容数据保留，不再加载废弃功能模型。
+- 拆分 Core、Persistence、Rendering 和 UI，独立拖拽控制器与打印/导出适配；统一依赖声明和分层检查。
+  Split Core, Persistence, Rendering, and UI with a dedicated drag controller and print/export adapters; centralize dependencies and layer checks.
+- 删除废弃记录模型与窗口偏好，旧 JSON 字段保留为不透明兼容数据；整理重复入口、构建输出与安全清理。
+  Remove obsolete record models and window preferences, retaining old JSON fields as opaque compatibility data. Simplify duplicate entry points, build output, and safe cleanup.
 
 ## 1.2.0 — 2026-10-15
 
-- 跨天拖拽复用任务控件，目标列宽、换行、序号与完成标记同步更新，统一占位与落位效果。
-- 每天底部添加整列宽的清空按钮，鼠标停留后淡入；显示具体日期及任务数，二次确认后仅清空该天，可撤销。
-- 放大任务栏图标的网格主体，减少留白，并调整小尺寸描边。
+- 统一跨天拖拽的列宽、换行、序号与完成标记；添加悬停显示、确认后清空当天并可撤销的底部按钮。
+  Unify column width, wrapping, numbering, and completion during cross-day dragging. Add a hover footer to clear one day after confirmation, with undo.
+- 放大任务栏图标主体，减少留白并改善小尺寸描边。
+  Enlarge the taskbar icon's main grid, reducing padding and improving small-size strokes.
 
 ## 1.1.0 — 2026-10-15
 
-- 整体移除下方记录区，任务使用完整列高；打印和图片导出同步移除。
-- 添加上一周、下一周、日期选择和返回本周，可查看历史并安排未来。
-- 按周独立保存；新建本周及未来周带入日常任务并重置完成状态。
-- 兼容旧数据，保留历史任务及旧记录数据。
+- 移除下方记录区；添加历史/未来周导航、日期选择及本周返回，按周独立保存并继承日常任务，保留旧字段。
+  Remove the records area. Add past/future navigation, date selection, and return to this week, with independent archives, daily inheritance, and legacy-field retention.
 
 ## 1.0.1 — 2026-10-15
 
-- 每日记录改为与任务一致的方块样式，去掉输入横线。
-- 体重、花销、锻炼、咖啡和 Vitamin D₃ 增加单位，保留原始记录值。
-- 打印和图片导出同步更新。
+- 当时的记录区改为任务方块样式并添加单位，打印与导出同步；此区域在 1.1.0 移除。
+  Style the former records area as task blocks with units and matching print/export output; the area was removed in 1.1.0.
 
 ## 1.0.0 — 2026-10-15
 
-- 七天任务看板、日常任务、完成置顶、自动序号及本地保存。
-- 每日自定义记录、A4 打印、PNG 导出与免安装软件包。
+- 首版七天看板、日常任务、完成置顶、序号、本地保存、自定义记录、A4 打印、PNG 导出及便携包。
+  Initial seven-day board with daily tasks, completed-first order, numbering, local saves, custom records, A4 print, PNG export, and portable packages.

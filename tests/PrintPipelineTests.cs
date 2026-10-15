@@ -206,7 +206,7 @@ namespace TaskBoard.Tests
                     "Zoom never changes printable geometry or physical size.");
                 int printRequests = 0;
                 preview.PrintRequested += (sender, args) => printRequests++;
-                Button print = Descendants<Button>(content).Single(button => AutomationProperties.GetName(button) == "打印");
+                Button print = Descendants<Button>(content).Single(button => AutomationProperties.GetName(button) == "Print");
                 print.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert(printRequests == 1, "Preview print button requests printing without a separate bitmap conversion.");
 

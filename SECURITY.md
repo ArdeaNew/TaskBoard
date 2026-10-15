@@ -1,9 +1,17 @@
-# 安全与本地数据
+# 安全与本地数据 / Security and local data
 
-当前版本为 1.3.0，运行于 Windows 和 .NET Framework 4.8。应用不发送网络请求，不包含账号系统、遥测或云同步；打印由 Windows 打印系统处理。
+当前版本为 1.4.0，运行于 Windows 和 .NET Framework 4.8。应用不发送网络请求，无账号、遥测或云同步；打印由 Windows 打印系统处理。
 
-任务和备份默认保存在 `%LOCALAPPDATA%\TaskBoard`，也可通过 `--data-dir` 指定目录。数据使用未加密的 JSON 文件保存，访问权限取决于 Windows 账户和目标目录。旧版本字段仅作为不透明兼容数据保留，不参与界面或业务逻辑。导出的 PNG 保存在用户选择的位置。
+The current version is 1.4.0 for Windows and .NET Framework 4.8. The app makes no network requests and has no accounts, telemetry, or cloud sync. Windows handles printing.
 
-请勿将真实任务、健康记录、消费记录、备份或导出图片提交到公开仓库。
+任务及备份默认保存在 `%LOCALAPPDATA%\TaskBoard`，可通过 `--data-dir` 指定目录。数据为未加密的 JSON，访问权限取决于 Windows 账户及目录。旧字段仅作不透明兼容数据保留。导出文件保存在用户选择的位置。
 
-发现安全问题时，请通过仓库的 **Security → Report a vulnerability** 入口报告（如已启用），提供软件版本、Windows 版本及使用虚构数据的最小复现步骤。请勿在公开 Issue 中发布敏感数据或可利用细节。
+Tasks and backups default to `%LOCALAPPDATA%\TaskBoard`, with `--data-dir` available for another location. Data is unencrypted JSON; access depends on the Windows account and directory permissions. Legacy fields are retained only as opaque compatibility data. Exports go to the location you choose.
+
+请勿向公开仓库或 Issue 提交真实任务、健康/消费记录、备份或导出图片。
+
+Do not submit real tasks, health/spending records, backups, or exported boards to the public repository or issues.
+
+安全问题请通过仓库的 **Security → Report a vulnerability** 报告（如已启用），附软件版本、Windows 版本和虚构数据的最小复现。请勿在公开 Issue 发布敏感信息或可利用细节。
+
+Report security issues through **Security → Report a vulnerability**, if enabled, with the app version, Windows version, and a minimal reproduction using fictional data. Keep sensitive information and exploit details out of public issues.

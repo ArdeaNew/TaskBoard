@@ -13,7 +13,7 @@ namespace TaskBoard.Rendering
         private const double UnitsPerMillimetre = 96.0 / 25.4;
         private const double RequestedMargin = 8.0 * UnitsPerMillimetre;
         private const double PreferredFontSize = 14.0;
-        private static readonly string[] Headers = { "周一", "周二", "周三", "周四", "周五", "周六", "周日" };
+        private static readonly IReadOnlyList<string> Headers = BoardLabels.DayNames;
         private static readonly Brush CompletedBrush = MakeBrush("#002FA7");
         private static readonly Pen BoxOutline = MakePen("#DDDDDD", 0.6);
 
@@ -50,9 +50,9 @@ namespace TaskBoard.Rendering
                 Math.Max(1, pageSize.Height - 2 * RequestedMargin));
             content.Intersect(printableArea);
             if (content.IsEmpty || content.Width < 80 || content.Height < 100)
-                throw new InvalidOperationException("打印区域过小。");
+                throw new InvalidOperationException("The printable area is too small.");
 
-            var columns = new List<TaskItem>[Headers.Length];
+            var columns = new List<TaskItem>[Headers.Count];
             for (int column = 0; column < columns.Length; column++) columns[column] = new List<TaskItem>();
             if (state.Tasks != null)
                 foreach (TaskItem task in state.Tasks)
@@ -62,7 +62,7 @@ namespace TaskBoard.Rendering
             const double headerHeight = 48;
             var board = new Rect(content.Left, content.Top + metricHeight,
                 content.Width, content.Height - metricHeight);
-            double columnWidth = board.Width / Headers.Length;
+            double columnWidth = board.Width / Headers.Count;
             double fontSize = FindFontSize(columns, columnWidth, board.Height - headerHeight);
             double padding = HorizontalPadding(fontSize);
 
@@ -75,7 +75,7 @@ namespace TaskBoard.Rendering
                 border.Freeze();
                 double dividerY = board.Top + headerHeight;
 
-                for (int column = 0; column < Headers.Length; column++)
+                for (int column = 0; column < Headers.Count; column++)
                 {
                     double x = board.Left + column * columnWidth;
                     var header = CreateText(Headers[column], 12, Brushes.Black, columnWidth - 8);
@@ -111,7 +111,7 @@ namespace TaskBoard.Rendering
                 // Draw the grid last so a full-width task fill cannot obscure a column edge.
                 drawing.DrawRectangle(null, border, board);
                 drawing.DrawLine(border, new Point(board.Left, dividerY), new Point(board.Right, dividerY));
-                for (int column = 1; column < Headers.Length; column++)
+                for (int column = 1; column < Headers.Count; column++)
                 {
                     double x = board.Left + column * columnWidth;
                     drawing.DrawLine(border, new Point(x, board.Top), new Point(x, board.Bottom));
@@ -122,17 +122,21 @@ namespace TaskBoard.Rendering
 
         private static void DrawMetrics(DrawingContext drawing, BoardPage visual, Rect content, BoardState state, DateTime localNow)
         {
-            DateMetrics metrics = DateMetrics.From(localNow);
             DateTime selectedWeek;
             if (!DateTime.TryParseExact(state.ActiveWeekStart, "yyyy-MM-dd", CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out selectedWeek)) selectedWeek = localNow;
-            DateMetrics weekMetrics = DateMetrics.From(selectedWeek);
-            string week = weekMetrics.WeekYear.ToString(CultureInfo.InvariantCulture) + " / W" +
-                weekMetrics.WeekNumber.ToString("00", CultureInfo.InvariantCulture);
-            string remaining = "月余 " + metrics.MonthRemainingPercent.ToString("0.0", CultureInfo.InvariantCulture) +
-                "%   /   年余 " + metrics.YearRemainingPercent.ToString("0.0", CultureInfo.InvariantCulture) + "%";
-            var left = CreateText(week, 10, Brushes.Black, content.Width);
-            var right = CreateText(remaining, 10, Brushes.Black, content.Width);
+            string week = BoardLabels.Week(selectedWeek);
+            string remaining = BoardLabels.Remaining(localNow);
+            const double preferredSize = 10;
+            double measuringWidth = Math.Max(1000, content.Width);
+            var left = CreateText(week, preferredSize, Brushes.Black, measuringWidth);
+            var right = CreateText(remaining, preferredSize, Brushes.Black, measuringWidth);
+            double fontSize = preferredSize * Math.Min(1, (content.Width - 12) / (left.Width + right.Width));
+            if (fontSize < preferredSize)
+            {
+                left = CreateText(week, fontSize, Brushes.Black, measuringWidth);
+                right = CreateText(remaining, fontSize, Brushes.Black, measuringWidth);
+            }
             // Font advance widths can be slightly narrower than the final glyph's ink.
             Rect leftInk = left.BuildGeometry(new Point()).Bounds;
             Rect rightInk = right.BuildGeometry(new Point()).Bounds;
@@ -162,7 +166,7 @@ namespace TaskBoard.Rendering
             {
                 lower /= 2;
                 if (lower < 0.001)
-                    throw new InvalidOperationException("内容过多，无法在一页内清晰排版。");
+                    throw new InvalidOperationException("There are too many tasks to fit clearly on one page.");
             }
             double upper = lower * 2;
             for (int iteration = 0; iteration < 22; iteration++)
@@ -225,7 +229,7 @@ namespace TaskBoard.Rendering
         {
             // A space retains an editable empty task's vertical position in the printed list.
             var text = new FormattedText(string.IsNullOrEmpty(value) ? " " : value,
-                CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight,
+                CultureInfo.GetCultureInfo("en-US"), FlowDirection.LeftToRight,
                 new Typeface(Typography.TaskFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
                 fontSize, brush, 1.0);
             text.MaxTextWidth = width;

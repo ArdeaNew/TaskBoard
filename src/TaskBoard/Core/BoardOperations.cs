@@ -68,27 +68,26 @@ namespace TaskBoard.Core
         public static void ArrangeTasks(BoardState state)
         {
             RequireState(state);
-            var normal = new List<TaskItem>[7];
-            var daily = new List<TaskItem>[7];
+            var pending = new List<TaskItem>[7];
             var completed = new List<TaskItem>[7];
             for (int i = 0; i < 7; i++)
             {
-                normal[i] = new List<TaskItem>();
-                daily[i] = new List<TaskItem>();
+                pending[i] = new List<TaskItem>();
                 completed[i] = new List<TaskItem>();
             }
             foreach (TaskItem task in state.Tasks)
             {
                 if (task == null) throw new ArgumentException("The board contains a null task.", "state");
                 if (task.Column < 1 || task.Column > 7) task.Column = 1;
-                (task.IsCompleted ? completed : task.IsDaily ? daily : normal)[task.Column - 1].Add(task);
+                // Completion is the only ordering boundary. Keep all pending
+                // tasks in their visible order, including daily tasks.
+                (task.IsCompleted ? completed : pending)[task.Column - 1].Add(task);
             }
             state.Tasks.Clear();
             for (int i = 0; i < 7; i++)
             {
                 state.Tasks.AddRange(completed[i]);
-                state.Tasks.AddRange(normal[i]);
-                state.Tasks.AddRange(daily[i]);
+                state.Tasks.AddRange(pending[i]);
             }
         }
 

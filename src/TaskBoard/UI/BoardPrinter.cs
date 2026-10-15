@@ -27,8 +27,7 @@ namespace TaskBoard.UI
             }
             catch (Exception exception)
             {
-                MessageBox.Show(owner, "预览失败：" + exception.Message, "打印",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                BoardDialog.Show(owner, "Preview failed: " + exception.Message, "Print preview");
             }
         }
 
@@ -54,7 +53,7 @@ namespace TaskBoard.UI
 
                 ticket = dialog.PrintTicket ?? ticket;
                 var queue = dialog.PrintQueue;
-                if (queue == null) throw new InvalidOperationException("未选择可用的打印机。");
+                if (queue == null) throw new InvalidOperationException("Select an available printer.");
                 ticket = queue.MergeAndValidatePrintTicket(queue.DefaultPrintTicket ?? new PrintTicket(), ticket).ValidatedPrintTicket;
                 dialog.PrintTicket = ticket;
                 PrintCapabilities capabilities = queue.GetPrintCapabilities(ticket);
@@ -82,8 +81,7 @@ namespace TaskBoard.UI
             }
             catch (Exception exception)
             {
-                MessageBox.Show(preview, "打印失败：" + exception.Message, "打印",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                BoardDialog.Show(preview, "Print failed: " + exception.Message, "Print");
             }
         }
 
@@ -111,7 +109,7 @@ namespace TaskBoard.UI
                         if (option != null && option.PageMediaSizeName == media.PageMediaSizeName && TryDimensions(option, out size))
                         { resolved = true; break; }
                 if (!resolved && !TryStandardSize(media == null ? null : media.PageMediaSizeName, out size))
-                    throw new InvalidOperationException("打印机未提供所选纸张的有效尺寸，请重新选择纸张。");
+                    throw new InvalidOperationException("The printer did not provide valid dimensions for the selected paper. Select another paper size.");
             }
             bool landscape = ticket.PageOrientation == PageOrientation.Landscape ||
                 ticket.PageOrientation == PageOrientation.ReverseLandscape;

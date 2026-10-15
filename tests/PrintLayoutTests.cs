@@ -41,6 +41,7 @@ namespace TaskBoard.Tests
         public static void Run()
         {
             EmptyPageAndDate();
+            EnglishLabelsAndMetricFit();
             WeekdayVectorOutlines();
             SelectedWeekMetadata();
             WeekdayMapping();
@@ -60,8 +61,8 @@ namespace TaskBoard.Tests
                 Near(bounds.Width, A4.Width) && Near(bounds.Height, A4.Height), "Physical A4 landscape bounds.");
             string text = ReadText(page);
             Assert(text.Contains("2026 / W42"), "Deterministic ISO week and year.");
-            Assert(text.Contains("月余 54.8%") && text.Contains("年余 21.4%"), "Current-day-inclusive remaining percentages.");
-            foreach (string header in new[] { "周一", "周二", "周三", "周四", "周五", "周六", "周日" })
+            Assert(text.Contains("Month left 54.8%") && text.Contains("Year left 21.4%"), "Current-day-inclusive remaining percentages.");
+            foreach (string header in new[] { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" })
                 Assert(text.Contains(header), "Printed header " + header + ".");
             Assert(!text.Contains("Task"), "Removed Task header is absent.");
             foreach (string removedLabel in new[] { "体重", "今日花销", "锻炼", "咖啡饮用量", "Vitamin D3", "Vitamin D₃" })
@@ -93,6 +94,29 @@ namespace TaskBoard.Tests
             Assert(sunday.Left > A4.Width * 0.8, "Column seven stays in Sunday's final column.");
         }
 
+        private static void EnglishLabelsAndMetricFit()
+        {
+            CultureInfo originalCulture = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("zh-CN");
+                Assert(BoardLabels.Week(new DateTime(2027, 1, 1)) == "2026 / W53",
+                    "The shared week label uses the ISO week year across the calendar boundary.");
+                Assert(BoardLabels.Remaining(TestDate) == "Month left 54.8%   /   Year left 21.4%",
+                    "Remaining percentages use the same English labels and decimal point under a Chinese locale.");
+            }
+            finally { CultureInfo.CurrentCulture = originalCulture; }
+
+            var printable = new Rect((A4.Width - 260) / 2, 30, 260, A4.Height - 60);
+            BoardPage page = Build(new BoardState(), printable);
+            PageTextRun week = page.TextRuns.Single(run => run.Text == "2026 / W42");
+            PageTextRun remaining = page.TextRuns.Single(run => run.Text.StartsWith("Month left ", StringComparison.Ordinal));
+            Assert(week.Bounds.Right + 5 < remaining.Bounds.Left,
+                "Expanded English date labels remain separate inside a narrow printable area.");
+            Assert(Inside(week.Bounds, printable) && Inside(remaining.Bounds, printable),
+                "Both date labels fit within narrow printer margins.");
+        }
+
         private static void WeekdayVectorOutlines()
         {
             BoardPage page = Build(new BoardState(), new Rect(new Point(), A4));
@@ -100,11 +124,11 @@ namespace TaskBoard.Tests
             Assert(!Leaves(page.Drawing).Any(item => item is GlyphRunDrawing || item is ImageDrawing),
                 "Printed text is font-independent vector outlines without raster images or glyph resources.");
             var shapes = new HashSet<string>();
-            foreach (string weekday in new[] { "周一", "周二", "周三", "周四", "周五", "周六", "周日" })
+            foreach (string weekday in new[] { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" })
             {
                 PageTextRun run = page.TextRuns.Single(item => item.Text == weekday);
                 Assert(!run.Bounds.IsEmpty && run.Bounds.Width > 10 && run.Bounds.Height > 7 && run.Geometry.GetArea() > 0,
-                    weekday + " has visible CJK outline geometry.");
+                    weekday + " has visible outline geometry.");
                 Assert(Leaves(page.Drawing).OfType<GeometryDrawing>().Any(item => item.Geometry == run.Geometry),
                     weekday + " metadata identifies geometry that is actually drawn.");
                 Assert(run.Geometry.IsFrozen, "Printed weekday geometry is immutable.");
@@ -125,7 +149,7 @@ namespace TaskBoard.Tests
             BoardPage page = Build(state, new Rect(new Point(), A4));
             string text = ReadText(page);
             Assert(text.Contains("2026 / W53"), "Printed week reflects the selected Monday across the year boundary.");
-            Assert(text.Contains("月余 54.8%") && text.Contains("年余 21.4%"),
+            Assert(text.Contains("Month left 54.8%") && text.Contains("Year left 21.4%"),
                 "Remaining month and year percentages still reflect the supplied current date.");
             Assert(text.Contains("ACTIVE_WEEK_TASK"), "Selected week's active task is printed.");
             Assert(!text.Contains("OTHER_WEEK_MARKER"), "Archived weeks are excluded from the selected print page.");

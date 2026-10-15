@@ -43,7 +43,7 @@ namespace TaskBoard.Persistence
 
             if (TryLoad(backupPath, out state, out protectBackup))
             {
-                AddWarning("已从本地备份恢复任务。");
+                AddWarning("Tasks were restored from the local backup.");
                 return state;
             }
 
@@ -55,7 +55,7 @@ namespace TaskBoard.Persistence
             if (state == null)
                 throw new ArgumentNullException("state");
             if (protectPrimary || protectBackup)
-                throw new IOException("原任务文件无法安全保留，请检查数据目录的访问权限。");
+                throw new IOException("The original task file could not be preserved safely. Check access to the data directory.");
 
             BoardState snapshot = Normalize(state);
             Directory.CreateDirectory(directory);
@@ -68,7 +68,7 @@ namespace TaskBoard.Persistence
             TryLoad(backupPath, out existing, out blocked);
             protectBackup = blocked;
             if (protectPrimary || protectBackup)
-                throw new IOException("原任务文件无法安全保留，请检查数据目录的访问权限。");
+                throw new IOException("The original task file could not be preserved safely. Check access to the data directory.");
 
             string temporaryPath = Path.Combine(directory, ".board-" + Guid.NewGuid().ToString("N") + ".tmp");
             try
@@ -127,11 +127,11 @@ namespace TaskBoard.Persistence
 
                 string preservedPath;
                 if (TryPreserve(path, out preservedPath))
-                    AddWarning("无法读取任务文件，原文件已保留为 " + Path.GetFileName(preservedPath) + "。");
+                    AddWarning("The task file could not be read. The original was preserved as " + Path.GetFileName(preservedPath) + ".");
                 else
                 {
                     protectFile = true;
-                    AddWarning("无法读取任务文件，原文件仍保留在 " + path + "。");
+                    AddWarning("The task file could not be read. The original remains at " + path + ".");
                 }
                 state = null;
                 return false;

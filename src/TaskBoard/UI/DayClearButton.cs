@@ -59,7 +59,8 @@ namespace TaskBoard.UI
             UseLayoutRounding = true;
             IsEnabled = false;
             IsTabStop = false;
-            AutomationProperties.SetName(this, "清空今日任务");
+            ToolTip = "Clear tasks for this day";
+            AutomationProperties.SetName(this, "Clear tasks for this day");
 
             chrome = new Border
             {
@@ -69,7 +70,7 @@ namespace TaskBoard.UI
                 Opacity = 0,
                 Child = new TextBlock
                 {
-                    Text = "清空今日任务", FontFamily = Typography.TaskFont, FontSize = 14,
+                    Text = "Clear day", FontFamily = Typography.TaskFont, FontSize = 14,
                     Foreground = MakeBrush(112, 112, 112),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center

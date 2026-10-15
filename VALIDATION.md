@@ -1,15 +1,27 @@
-# 验证记录
+# 验证记录 / Validation
 
-2026-10-15，TaskBoard 1.3.0，Windows，.NET Framework 4.8。
+2026-10-15，TaskBoard 1.4.0，Windows，.NET Framework 4.8。 / TaskBoard 1.4.0 on Windows, targeting .NET Framework 4.8.
 
-- Release 编译成功，无编译警告。主程序 99,840 bytes，配置文件 347 bytes，零第三方运行依赖。
-- 32 项核心与存储检查通过：日期边界、迁移、原子保存与损坏恢复、旧字段兼容、每周归档、日常任务、排序和清空；新增背景验证、保存往返、克隆、每日独立填色、新周按星期继承及未提交草稿检查。
-- 783 项页面绘制检查通过：七个星期标题与实际非空文字轮廓、七等宽列、序号、整列宽背景、完成标记、A4 横向、硬边距、密集任务完整输出与所选周元数据。绘制检查仅编译 Core + Rendering。
-- 128 项真实 WPF 控件检查通过：编辑、复制、完成置顶、周切换、保存恢复、PNG、跨列拖拽与取消、隐藏清空入口和撤销；新增右键背景菜单、预设与自定义色值、清除、编辑取消、草稿保存保护、单项撤销、日常背景独立及拖拽填色检查。
-- 94 项打印流水线检查通过：单页固定文档、相同矢量页面、预览缩放和打印事件、纸张变更；XPS 写入后重新读取，全部星期及中英文文字墨迹保留，背景色保留，包中无位图或字体资源。覆盖仅有名称的 A4/A3/Letter、纸张能力尺寸与方向，以及默认打印机校验失败的回退。
-- 已检查软件渲染的预览窗口、XPS 重开页面及拖拽图片，均为虚构任务，位于 `artifacts/tests`。测试不显示窗口、不捕获鼠标、不注入桌面输入、不提交打印作业。
-- 实际打印机出纸、不同打印机驱动、物理悬停和拖拽、各类输入法及任务栏缓存刷新仍需人工验收。清空检查验证确认后的操作及隐藏保护，未自动点击原生确认框。
-- 预览与打印共用矢量页面；PNG 单独以 192 DPI 编码。打印请求高质量及 600 DPI，并由所选打印机校验，最终能力取决于设备。文字轮廓不依赖打印机端字体。
-- Core 不引用 WPF；Persistence 和 Rendering 各自依赖 Core；调色板及按钮共用，颜色控件按首次打开时创建。依赖由项目文件统一声明，没有新增包、HTTP 客户端、遥测、登录或自动更新逻辑。
+| 检查 / Check | 结果 / Result |
+| --- | --- |
+| Release 构建 / Release build | 无警告；主程序 102,400 bytes，配置 347 bytes；零第三方依赖。 / No warnings; app 102,400 bytes, config 347 bytes; no third-party dependencies. |
+| 核心与存储 / Core and storage | 32 项通过：日期、迁移、恢复、归档、完成置顶、混合待办顺序、日常副本与背景。 / 32 passed: dates, migration, recovery, archives, completed-first sorting, mixed pending order, daily copies, and backgrounds. |
+| 页面绘制 / Page rendering | 787 项通过：英文星期与日期标签、ISO 跨年边界、剩余百分比、矢量轮廓、背景、硬边距及密集任务。 / 787 passed: English days/date labels, ISO year boundaries, remaining percentages, vector outlines, fills, hard margins, and dense tasks. |
+| WPF 控件 / WPF controls | 164 项通过：真实空白区连续点击追加、取消草稿、保存重开、撤销、日常排序、跨天拖拽、英文界面、窄窗口及默认取消的确认框。 / 164 passed: repeated blank-area appends, draft cancellation, save/reopen, undo, daily ordering, cross-day dragging, English UI, narrow windows, and default-cancel confirmation. |
+| 打印流程 / Print pipeline | 94 项通过：单页固定文档、预览缩放、纸张能力和默认队列失败回退；XPS 写入重开后文字与背景保留，无位图或字体资源依赖。 / 94 passed: fixed page, preview zoom, media capabilities, and default-queue failure fallback; XPS round-trip preserves text and fills without bitmap or font-resource dependencies. |
 
-公开源码按显式清单收集；与本机数据的比对只在内存中进行，未发现真实任务、标识或旧记录值。发布包排除 `artifacts`、`qa-data`、个人数据、截图、`.git` 和构建缓存。所有写入检查使用隔离目录，不修改用户默认看板。
+已检查虚构任务的软件渲染图，包括最小宽度看板、打印预览和拖拽。最小宽度下，`This week` 与剩余百分比无重叠，`Clear day` 适合列宽。检查不显示窗口、不捕获鼠标、不注入桌面输入，也不提交打印作业。
+
+Software-rendered synthetic boards, including minimum width, print preview, and dragging, were inspected. `This week` does not overlap the percentages, and `Clear day` fits the columns. Checks show no windows, capture no mouse, inject no desktop input, and submit no print jobs.
+
+实际打印机出纸、不同驱动、物理悬停与拖拽、各类输入法及任务栏缓存刷新仍需人工验收。打印请求高质量和 600 DPI，最终设置由设备能力校验；PNG 以 192 DPI 输出。
+
+Physical printing, driver variations, live hover/drag behavior, input methods, and taskbar cache refresh still need manual acceptance. Printing requests high quality and 600 DPI, subject to device validation; PNG export uses 192 DPI.
+
+应用自有文字与确认框为英文，Windows 原生打印、保存对话框使用系统语言。中文用户任务与宋体映射保留。Core 不引用 WPF；Persistence、Rendering 各自依赖 Core；共享标签防止屏幕和输出文案不一致。
+
+App-owned text and confirmations are English; native Windows print/save dialogs use the system language. Chinese task text and SimSun mapping remain. Core has no WPF reference; Persistence and Rendering each depend on Core, and shared labels keep screen and output consistent.
+
+发布源码按显式清单收集，并仅在内存中与本机数据核对，未发现真实任务或旧记录内容。发布包排除个人数据、截图、测试输出、`.git` 和缓存；所有写入测试使用隔离目录，不修改默认用户看板。
+
+Public source uses an explicit allowlist and was compared with local data only in memory; no actual task or legacy-record content was found. Packages exclude personal data, screenshots, test output, `.git`, and caches. All write tests use isolated directories and leave the default user board untouched.

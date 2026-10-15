@@ -9,6 +9,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
 using TaskBoard.Core;
@@ -49,7 +50,8 @@ namespace TaskBoard.UI
             state = store.Load();
             WeeklyPlanner.Initialize(state, DateTime.Today);
             lastSystemWeek = WeeklyPlanner.MondayOf(DateTime.Today);
-            Title = "Task";
+            Title = "TaskBoard";
+            Language = XmlLanguage.GetLanguage("en-US");
             Background = Brushes.White;
             FontFamily = Typography.TaskFont;
             FontSize = 14;
@@ -90,7 +92,7 @@ namespace TaskBoard.UI
             Loaded += (s, e) =>
             {
                 if (!string.IsNullOrEmpty(store.LastWarning))
-                    MessageBox.Show(this, store.LastWarning, "Task", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    BoardDialog.Show(this, store.LastWarning, "TaskBoard");
             };
         }
 
@@ -111,21 +113,21 @@ namespace TaskBoard.UI
             remaining.FontSize = 12;
             remaining.Foreground = new SolidColorBrush(Color.FromRgb(105, 105, 105));
             var navigation = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            previousWeekButton = IconButton("‹", "上一周");
+            previousWeekButton = IconButton("‹", "Previous week");
             previousWeekButton.FontSize = 22;
             previousWeekButton.Click += (s, e) => NavigateWeek(WeeklyPlanner.CurrentWeekStart(state).AddDays(-7));
             navigation.Children.Add(previousWeekButton);
-            chooseWeekButton = IconButton("", "选择周");
+            chooseWeekButton = IconButton("", "Choose week");
             chooseWeekButton.Width = 112;
             chooseWeekButton.Content = week;
             chooseWeekButton.Click += (s, e) => OpenWeekPicker();
             navigation.Children.Add(chooseWeekButton);
-            nextWeekButton = IconButton("›", "下一周");
+            nextWeekButton = IconButton("›", "Next week");
             nextWeekButton.FontSize = 22;
             nextWeekButton.Click += (s, e) => NavigateWeek(WeeklyPlanner.CurrentWeekStart(state).AddDays(7));
             navigation.Children.Add(nextWeekButton);
-            var currentWeek = IconButton("\uE80F", "回到本周");
-            currentWeek.FontFamily = new FontFamily("Segoe MDL2 Assets");
+            var currentWeek = IconButton("This week", "This week");
+            currentWeek.Width = 84;
             currentWeek.FontSize = 13;
             currentWeek.Margin = new Thickness(6, 0, 0, 0);
             currentWeek.Click += (s, e) => GoToCurrentWeek();
@@ -133,14 +135,14 @@ namespace TaskBoard.UI
             bar.Children.Add(navigation);
             Grid.SetColumn(remaining, 1);
             bar.Children.Add(remaining);
-            var export = IconButton("\uE91B", "导出图片 · Ctrl+Shift+S");
+            var export = IconButton("\uE91B", "Export image · Ctrl+Shift+S");
             export.FontFamily = new FontFamily("Segoe MDL2 Assets");
             export.FontSize = 15;
             export.Margin = new Thickness(12, 0, 0, 0);
             export.Click += (s, e) => ExportImage();
             Grid.SetColumn(export, 2);
             bar.Children.Add(export);
-            var print = IconButton("\uE749", "打印 · Ctrl+P");
+            var print = IconButton("\uE749", "Print · Ctrl+P");
             print.FontFamily = new FontFamily("Segoe MDL2 Assets");
             print.FontSize = 15;
             print.Margin = new Thickness(12, 0, 0, 0);
@@ -154,7 +156,7 @@ namespace TaskBoard.UI
             layout.Children.Add(frame);
             board.RowDefinitions.Add(new RowDefinition { Height = new GridLength(64) });
             board.RowDefinitions.Add(new RowDefinition());
-            string[] labels = { "周一", "周二", "周三", "周四", "周五", "周六", "周日" };
+            var labels = BoardLabels.DayNames;
             for (int i = 0; i < columns.Length; i++)
             {
                 int column = i;
@@ -231,12 +233,11 @@ namespace TaskBoard.UI
             int count = state.Tasks.Count(t => t.Column == column + 1);
             if (count == 0) return;
             DateTime date = WeeklyPlanner.CurrentWeekStart(state).AddDays(column);
-            string message = date.ToString("yyyy.MM.dd dddd", CultureInfo.GetCultureInfo("zh-CN")) +
-                "\n\n确定清空这一天的 " + count.ToString(CultureInfo.InvariantCulture) + " 项任务？";
-            var result = MessageBox.Show(this, message, "清空今日任务", MessageBoxButton.YesNo,
-                MessageBoxImage.Question, MessageBoxResult.No);
+            string message = date.ToString("yyyy.MM.dd dddd", CultureInfo.GetCultureInfo("en-US")) +
+                "\n\nClear all " + count.ToString(CultureInfo.InvariantCulture) + " tasks for this day?";
+            bool confirmed = BoardDialog.Confirm(this, message, "Clear day", "Clear");
             Focus();
-            if (result == MessageBoxResult.Yes)
+            if (confirmed)
                 ClearDay(column);
         }
 
@@ -329,10 +330,8 @@ namespace TaskBoard.UI
             editSnapshot = Snapshot();
             var item = new TaskItem { Id = Guid.NewGuid().ToString("N"), Text = "", Color = "#202020", Column = column + 1 };
             state.Tasks.Add(item);
-            BoardOperations.ArrangeTasks(state);
             var card = CreateCard(item);
-            int insertion = columns[column].Children.OfType<TaskCard>().TakeWhile(t => t.Item.IsCompleted || !t.Item.IsDaily).Count();
-            columns[column].Children.Insert(insertion, card);
+            columns[column].Children.Add(card);
             RenumberTasks();
             scrollers[column].ScrollToEnd();
             card.BeginEdit(true);
@@ -391,14 +390,12 @@ namespace TaskBoard.UI
                 }
             }
             var selected = WeeklyPlanner.CurrentWeekStart(state);
-            var selectedMetrics = DateMetrics.From(selected);
-            var metrics = DateMetrics.From(DateTime.Now);
-            week.Text = selectedMetrics.WeekYear.ToString(CultureInfo.InvariantCulture) + " / W" + selectedMetrics.WeekNumber.ToString("00", CultureInfo.InvariantCulture);
+            week.Text = BoardLabels.Week(selected);
             var end = selected <= DateTime.MaxValue.Date.AddDays(-6) ? selected.AddDays(6) : DateTime.MaxValue.Date;
             chooseWeekButton.ToolTip = selected.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture) + " — " + end.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture);
             previousWeekButton.IsEnabled = selected >= DateTime.MinValue.Date.AddDays(7);
             nextWeekButton.IsEnabled = selected <= DateTime.MaxValue.Date.AddDays(-7);
-            remaining.Text = string.Format(CultureInfo.InvariantCulture, "月余 {0:0.0}%   /   年余 {1:0.0}%", metrics.MonthRemainingPercent, metrics.YearRemainingPercent);
+            remaining.Text = BoardLabels.Remaining(DateTime.Now);
         }
 
         private void NavigateWeek(DateTime anyDay)
@@ -427,7 +424,12 @@ namespace TaskBoard.UI
             if (editing != null) editing.CommitEdit();
             if (weekPicker != null && weekPicker.IsOpen) { weekPicker.IsOpen = false; return; }
             var selected = WeeklyPlanner.CurrentWeekStart(state);
-            var calendar = new System.Windows.Controls.Calendar { SelectedDate = selected, DisplayDate = selected, SelectionMode = CalendarSelectionMode.SingleDate, FontFamily = Typography.TaskFont, FontSize = 13 };
+            var calendar = new System.Windows.Controls.Calendar
+            {
+                SelectedDate = selected, DisplayDate = selected, SelectionMode = CalendarSelectionMode.SingleDate,
+                FirstDayOfWeek = DayOfWeek.Monday, Language = XmlLanguage.GetLanguage("en-US"),
+                FontFamily = Typography.TaskFont, FontSize = 13
+            };
             var popup = new Popup
             {
                 PlacementTarget = chooseWeekButton, Placement = PlacementMode.Bottom,
@@ -480,7 +482,7 @@ namespace TaskBoard.UI
                 return true;
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
-            { MessageBox.Show(this, "保存失败：" + ex.Message, "Task", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
+            { BoardDialog.Show(this, "Could not save: " + ex.Message, "TaskBoard"); return false; }
         }
 
         private void OnClosing(object sender, CancelEventArgs e)

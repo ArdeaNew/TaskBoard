@@ -20,26 +20,43 @@ try {
     $portableReadme = @'
 TaskBoard
 
-Windows 10/11 + .NET Framework 4.8 或更新版本。
-解压完整文件夹，双击 TaskBoard.exe 即可运行，无需安装。
+ISO 周数、月余和年余百分比，让计划与时间进度始终可见；剩余天数包含今天。
+ISO week number, month remaining, and year remaining keep time in view; remaining days include today.
 
-软件完全本地运行，无账号、广告、遥测、自动更新或网络请求。
-各周任务保存在 %LOCALAPPDATA%\TaskBoard，移动或更新程序不会清空数据。
+Windows 10/11 + .NET Framework 4.8 或更新版本。完整解压，双击 TaskBoard.exe，无需安装。
+Windows 10/11 + .NET Framework 4.8 or later. Extract all files and open TaskBoard.exe; no installation.
 
-单击格子空白处新增任务，单击任务编辑。Enter 保存，Shift+Enter 换行。
-拖动任务可排序或移动到另一天；日常任务在各天末尾，完成任务自动置顶。
-任务右键“应用到每天”创建日常任务；末尾方块切换完成状态。
-右键“背景色”填充整块任务，可选预设色、自定义 #RRGGBB 或清除；每天的背景独立。
-顶部箭头切换周，点击周数选择日期，房屋图标返回本周。
-历史周和未来周独立保存，新建未来周会带入日常任务并重置完成状态。
-鼠标在每天底部停留后显示整列宽的清空按钮；核对日期和任务数，确认后清空该天，可用 Ctrl+Z 撤销。
+完全本地运行，无账号、遥测、自动更新或网络请求。任务在 %LOCALAPPDATA%\TaskBoard。
+Fully local: no account, telemetry, updater, or network requests. Data: %LOCALAPPDATA%\TaskBoard.
+关闭应用后复制整个数据目录以备份；更新程序不会清空任务。
+Close the app and copy the entire data directory to back up. Updating app files does not clear tasks.
 
-Ctrl+N：今天新增任务
-Ctrl+Z：撤销任务操作
-Ctrl+P：打开整页打印预览，支持缩放、适合页面，再点击打印；默认 A4 横向
-Ctrl+Shift+S：导出完整 PNG 图片
+英文界面，支持中文任务；Windows 打印/保存对话框跟随系统语言。
+English interface with Chinese task support; native print/save dialogs follow Windows language.
+点击空白总是在当天末尾新增，点击任务编辑。Enter 保存，Shift+Enter 换行，Esc 取消。
+Click blank space to append at the day's end, or a task to edit. Enter saves; Shift+Enter adds a line; Esc cancels.
+拖动排序，普通任务可跨天移动，日常任务仅当天排序。完成项置顶，待办保持用户顺序。
+Drag to reorder; ordinary tasks move across days, daily tasks stay within their day. Completed tasks move to the top; pending tasks keep your order.
+右击 Apply to every day 补齐日常副本并将未完成副本放到每天末尾；末尾方块切换完成。
+Right-click Apply to every day to create missing copies and place pending copies at each day's end; the trailing square toggles completion.
+圆点设置文字色；右击 Background color 填充整块，支持预设、#RRGGBB 和 No fill；每天背景独立。
+The dot sets text color; right-click Background color for presets, #RRGGBB, or No fill. Daily fills are independent.
+顶部箭头切换周，点击周数选日期，This week 返回本周；月余/年余始终对应系统当天。
+Use header arrows for weeks, click the week number for dates, or This week to return. Month/year remaining always use today.
+历史与未来周独立保存；新未来周继承日常任务并重置完成。
+Past and future plans save separately. New future weeks inherit daily tasks with completion reset.
+在某天底部停留显示 Clear day；核对日期/任务数后确认，只清空该天，Ctrl+Z 撤销。
+Hover at a day's bottom for Clear day. Confirm its date/count to clear only that day; Ctrl+Z undoes it.
 
-源码包包含构建、测试、图标源文件和 GitHub 自动构建配置。
+Ctrl+N：当天对应列末尾新增 / Append to today's weekday in the selected week
+Ctrl+Z：撤销 / Undo
+Ctrl+P：打印预览，缩放或 Fit page，再 Print；默认 A4 横向
+Ctrl+P: Preview, zoom or Fit page, then Print; A4 landscape by default
+Ctrl+Shift+S：导出完整 PNG / Export the full week as PNG
+
+源码包包含构建、测试、图标和自动构建配置；完整中英文说明见仓库。
+The source package includes build scripts, tests, icons, and CI; find the full bilingual guide in the repository.
+https://github.com/ArdeaNew/TaskBoard
 '@
     [IO.File]::WriteAllText((Join-Path $portableStage 'README.txt'), $portableReadme, [Text.UTF8Encoding]::new($true))
     Copy-TaskBoardSource $projectRoot $sourceStage

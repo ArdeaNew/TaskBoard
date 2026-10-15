@@ -12,6 +12,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using TaskBoard.Core;
 using TaskBoard.Persistence;
+using TaskBoard.Rendering;
 using TaskBoard.UI;
 
 namespace TaskBoard.Tests
@@ -36,12 +37,14 @@ namespace TaskBoard.Tests
                 Assert(window.WindowState == WindowState.Normal, "Window opens restored.");
                 Assert(Math.Abs(window.Width - Math.Max(window.MinWidth, SystemParameters.WorkArea.Width * .7)) < 1, "Width uses 70% of work area.");
                 Assert(Math.Abs(window.Height - Math.Max(window.MinHeight, SystemParameters.WorkArea.Height * .7)) < 1, "Height uses 70% of work area.");
+                AssertBottomAppending(Path.Combine(directory, "bottom-append"));
                 Layout(window);
                 var state = Field<BoardState>(window, "state");
                 var panels = Field<ColumnPanel[]>(window, "columns");
                 Assert(panels.Length == 7, "Seven day columns.");
+                AssertEnglishChrome(window);
                 AssertTaskOnlyBoard(window, panels, state);
-                Assert(!Descendants<Button>((DependencyObject)window.Content).Any(b => AutomationProperties.GetName(b).Contains("添加任务")), "Weekday headers have no add buttons.");
+                Assert(!Descendants<Button>((DependencyObject)window.Content).Any(b => AutomationProperties.GetName(b).Contains("Add task")), "Weekday headers have no add buttons.");
                 var card = panels[0].Children.OfType<TaskCard>().Single();
                 Assert(card.Margin.Left == 0 && card.Margin.Right == 0 && card.CornerRadius.TopLeft == 0, "Task box has no horizontal inset or rounded corners.");
                 Assert(Math.Abs(card.ActualWidth - panels[0].ActualWidth) < 1, "Task box fills the column width.");
@@ -49,7 +52,7 @@ namespace TaskBoard.Tests
                 var activeEditor = Field<TextBox>(card, "editor");
                 activeEditor.Text = "Design 编辑中的任务";
                 Assert(ReferenceEquals(activeEditor.ContextMenu, card.ContextMenu), "Active text editor exposes the task context menu instead of its default text menu.");
-                var apply = activeEditor.ContextMenu.Items.OfType<MenuItem>().Single(i => (string)i.Header == "应用到每天");
+                var apply = activeEditor.ContextMenu.Items.OfType<MenuItem>().Single(i => (string)i.Header == "Apply to every day");
                 apply.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                 Assert(state.Tasks.Count == 7 && state.Tasks.All(t => t.IsDaily), "Context menu creates seven daily tasks.");
                 Assert(state.Tasks.All(t => t.Text == "Design 编辑中的任务"), "Applying directly from the editor commits and copies the edited text to all days.");
@@ -63,12 +66,12 @@ namespace TaskBoard.Tests
                 var normal = panels[0].Children.OfType<TaskCard>().Single(t => !t.Item.IsDaily);
                 Field<TextBox>(normal, "editor").Text = "Review 复核";
                 normal.CommitEdit();
-                Assert(panels[0].Children.OfType<TaskCard>().First() == normal && panels[0].Children.OfType<TaskCard>().Last().Item.IsDaily, "New ordinary task stays above daily tasks.");
+                Assert(panels[0].Children.OfType<TaskCard>().Last() == normal && panels[0].Children.OfType<TaskCard>().First().Item.IsDaily, "New ordinary task appears below the existing daily task.");
                 Assert(panels[0].Children.OfType<TaskCard>().Select(t => t.Ordinal).SequenceEqual(new[] { 1, 2 }) && panels[1].Children.OfType<TaskCard>().Single().Ordinal == 1, "Numbering follows order and resets each day.");
 
                 var routine = panels[0].Children.OfType<TaskCard>().Single(t => t.Item.IsDaily);
                 string completedId = routine.Item.Id;
-                Descendants<Button>(routine).Single(t => AutomationProperties.GetName(t) == "完成")
+                Descendants<Button>(routine).Single(t => AutomationProperties.GetName(t) == "Complete")
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 var completed = panels[0].Children.OfType<TaskCard>().First();
                 Assert(completed.Item.Id == completedId && completed.Item.IsCompleted,
@@ -88,7 +91,7 @@ namespace TaskBoard.Tests
                 normal.BeginEdit();
                 Field<TextBox>(normal, "editor").Text = "Review saved before apply";
                 var routineMenu = panels[1].Children.OfType<TaskCard>().Single(t => t.Item.IsDaily).ContextMenu;
-                routineMenu.Items.OfType<MenuItem>().Single(i => (string)i.Header == "应用到每天")
+                routineMenu.Items.OfType<MenuItem>().Single(i => (string)i.Header == "Apply to every day")
                     .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                 var updatedNormal = panels[0].Children.OfType<TaskCard>().Single(t => t.Item.Id == normalId);
                 Assert(updatedNormal.Item.Text == "Review saved before apply", "Applying another task commits the pending ordinary edit.");
@@ -99,7 +102,7 @@ namespace TaskBoard.Tests
                 Assert(!store.Load().Tasks.Any(t => string.IsNullOrWhiteSpace(t.Text)),
                     "Autosave while a new blank task is being edited writes only committed tasks.");
                 routineMenu = panels[2].Children.OfType<TaskCard>().Single(t => t.Item.IsDaily).ContextMenu;
-                routineMenu.Items.OfType<MenuItem>().Single(i => (string)i.Header == "应用到每天")
+                routineMenu.Items.OfType<MenuItem>().Single(i => (string)i.Header == "Apply to every day")
                     .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                 Assert(!state.Tasks.Any(t => string.IsNullOrWhiteSpace(t.Text)), "Applying another task removes the pending blank new task.");
                 Assert(!panels.SelectMany(p => p.Children.OfType<TaskCard>()).Any(t => string.IsNullOrWhiteSpace(t.Item.Text)),
@@ -152,6 +155,131 @@ namespace TaskBoard.Tests
             root.UpdateLayout();
         }
 
+        private static void AssertBottomAppending(string directory)
+        {
+            var initial = new BoardState
+            {
+                Tasks = new List<TaskItem>
+                {
+                    new TaskItem { Id = "done-normal", Text = "Completed ordinary task", Column = 1, IsCompleted = true },
+                    new TaskItem { Id = "first-normal", Text = "First pending task", Column = 1 },
+                    new TaskItem { Id = "pending-daily", Text = "Pending daily task", Column = 1, DailyGroupId = "routine-a" },
+                    new TaskItem { Id = "last-normal", Text = "Last existing pending task", Column = 1 },
+                    new TaskItem { Id = "done-daily", Text = "Completed daily task", Column = 1, DailyGroupId = "routine-b", IsCompleted = true },
+                    new TaskItem { Id = "other-day", Text = "Another day", Column = 2 }
+                }
+            };
+            var store = new BoardStore(directory);
+            store.Save(initial);
+            MainWindow window = null;
+            try
+            {
+                window = new MainWindow(store);
+                Layout(window);
+                var state = Field<BoardState>(window, "state");
+                var panels = Field<ColumnPanel[]>(window, "columns");
+                foreach (var panel in panels) panel.Animate = false;
+                var expected = new List<string> { "done-normal", "done-daily", "first-normal", "pending-daily", "last-normal" };
+                AssertDayOrder(state, panels[0], expected, "Opening a mixed day preserves pending order and keeps completed tasks first.");
+                for (int index = 0; index < 3; index++)
+                {
+                    ClickBlankDay(window, 0);
+                    var draft = panels[0].Children.OfType<TaskCard>().Last();
+                    Assert(draft.IsEditing && string.IsNullOrEmpty(draft.Item.Text) && draft.Ordinal == expected.Count + 1,
+                        "Every blank-cell click immediately opens the new editor at the absolute bottom.");
+                    Assert(state.Tasks.Last(t => t.Column == 1) == draft.Item,
+                        "The model and visible column agree on the draft's bottom position.");
+                    Field<TextBox>(draft, "editor").Text = "Synthetic appended task " + (index + 1);
+                    draft.CommitEdit();
+                    expected.Add(draft.Item.Id);
+                    AssertDayOrder(state, panels[0], expected, "Committing an appended task retains the mixed order.");
+                    Invoke(window, "RenderTasks");
+                    AssertDayOrder(state, panels[0], expected, "Rebuilding the board never groups daily tasks below new additions.");
+                    Invoke(window, "SaveNow");
+                    Assert(store.Load().Tasks.Where(t => t.Column == 1).Select(t => t.Id).SequenceEqual(expected),
+                        "Saving and reloading preserve each repeated bottom addition.");
+                }
+
+                ClickBlankDay(window, 0);
+                var blank = panels[0].Children.OfType<TaskCard>().Last();
+                Invoke(window, "SaveNow");
+                Assert(store.Load().Tasks.Where(t => t.Column == 1).Select(t => t.Id).SequenceEqual(expected),
+                    "Autosave excludes an empty bottom draft without disturbing the committed order.");
+                blank.CancelEdit();
+                AssertDayOrder(state, panels[0], expected, "Cancelling a bottom draft leaves every committed task in place.");
+
+                var undo = Field<Stack<List<TaskItem>>>(window, "undo");
+                state.Tasks = undo.Pop();
+                expected.RemoveAt(expected.Count - 1);
+                Invoke(window, "RenderTasks");
+                Invoke(window, "QueueSave");
+                Invoke(window, "SaveNow");
+                AssertDayOrder(state, panels[0], expected, "Undoing the latest addition restores the exact preceding mixed order.");
+
+                window.Close();
+                window = new MainWindow(store);
+                Layout(window);
+                state = Field<BoardState>(window, "state");
+                panels = Field<ColumnPanel[]>(window, "columns");
+                foreach (var panel in panels) panel.Animate = false;
+                AssertDayOrder(state, panels[0], expected, "Reopening the application preserves the undone bottom-add order.");
+
+                var daily = panels[0].Children.OfType<TaskCard>().Single(card => card.Item.Id == "pending-daily");
+                daily.ContextMenu.Items.OfType<MenuItem>().Single(item => (string)item.Header == "Apply to every day")
+                    .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                expected.Remove("pending-daily");
+                expected.Add("pending-daily");
+                AssertDayOrder(state, panels[0], expected, "Applying a pending daily task appends it at that moment without reordering its peers.");
+
+                Layout(window);
+                daily = panels[0].Children.OfType<TaskCard>().Single(card => card.Item.Id == "pending-daily");
+                SetPointer(window, daily.TranslatePoint(new Point(12, 12), Field<Grid>(window, "surface")));
+                Invoke(Drag(window), "StartDragVisuals", daily);
+                SetPointer(window, panels[0].TranslatePoint(new Point(12, 2), Field<Grid>(window, "surface")));
+                Invoke(Drag(window), "UpdateDropTarget");
+                Assert(((TaskCard)Field<Border>(Drag(window), "ghost").Child).Ordinal == 3,
+                    "A pending daily task can move before ordinary pending tasks while completed tasks remain first.");
+                Invoke(Drag(window), "FinishDrag", true);
+                Invoke(Drag(window), "CompleteDropAnimation");
+                expected.Remove("pending-daily");
+                expected.Insert(2, "pending-daily");
+                AssertDayOrder(state, panels[0], expected, "A daily drag retains its chosen place among ordinary pending tasks.");
+
+                Layout(window);
+                var normal = panels[0].Children.OfType<TaskCard>().Single(card => card.Item.Id == "first-normal");
+                SetPointer(window, normal.TranslatePoint(new Point(12, 12), Field<Grid>(window, "surface")));
+                Invoke(Drag(window), "StartDragVisuals", normal);
+                var scroller = Field<ScrollViewer[]>(window, "scrollers")[1];
+                SetPointer(window, scroller.TranslatePoint(new Point(12, scroller.ActualHeight - 4), Field<Grid>(window, "surface")));
+                Invoke(Drag(window), "UpdateDropTarget");
+                Assert(Field<int>(Drag(window), "targetColumn") == 1 &&
+                    ((TaskCard)Field<Border>(Drag(window), "ghost").Child).Ordinal == 3,
+                    "An ordinary cross-day drop can target the bottom below a daily task.");
+                Invoke(Drag(window), "FinishDrag", true);
+                Invoke(Drag(window), "CompleteDropAnimation");
+                Assert(panels[1].Children.OfType<TaskCard>().Last().Item.Id == "first-normal" &&
+                    state.Tasks.Last(t => t.Column == 2).Id == "first-normal",
+                    "Dropping below a daily task preserves the same bottom position in the view and model.");
+            }
+            finally { if (window != null) window.Close(); }
+        }
+
+        private static void ClickBlankDay(MainWindow window, int column)
+        {
+            var cell = Field<Grid>(window, "board").Children.OfType<Border>().Single(element =>
+                Grid.GetRow(element) == 1 && Grid.GetColumn(element) == column);
+            cell.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+            { RoutedEvent = UIElement.MouseLeftButtonDownEvent });
+        }
+
+        private static void AssertDayOrder(BoardState state, ColumnPanel panel, IEnumerable<string> expected, string message)
+        {
+            string[] ids = expected.ToArray();
+            Assert(panel.Children.OfType<TaskCard>().Select(card => card.Item.Id).SequenceEqual(ids) &&
+                state.Tasks.Where(task => task.Column == 1).Select(task => task.Id).SequenceEqual(ids) &&
+                panel.Children.OfType<TaskCard>().Select(card => card.Ordinal).SequenceEqual(Enumerable.Range(1, ids.Length)), message);
+        }
+
         private static void SavePreview(MainWindow window)
         {
             SavePreview(window, "board-preview.png");
@@ -178,6 +306,9 @@ namespace TaskBoard.Tests
             var clearButtons = Field<DayClearButton[]>(window, "clearButtons");
             Assert(clearButtons.Length == 7 && clearButtons.All(button => Math.Abs(button.ActualHeight - 40) < 1),
                 "Every day reserves the same fixed-height clear region.");
+            Assert(clearButtons.All(button => AutomationProperties.GetName(button) == "Clear tasks for this day") &&
+                clearButtons.All(button => Descendants<TextBlock>(button).Any(text => text.Text == "Clear day")),
+                "Each clear region uses a short English label and a descriptive English accessible name.");
             Assert(taskScrollers.All(s => Math.Abs(s.ActualHeight + 40 - bodyHeight) < 2),
                 "Task scrollers use the full day body above its fixed clear region.");
             Assert(clearButtons.Select((button, index) => button.IsAvailable == state.Tasks.Any(t =>
@@ -191,6 +322,60 @@ namespace TaskBoard.Tests
                 "Record value and label editors are absent from the task board.");
             Assert(!Descendants<Button>(root).Any(b => AutomationProperties.GetName(b) == "添加记录项目"),
                 "The add-record button is absent from the task board.");
+        }
+
+        private static void AssertEnglishChrome(MainWindow window)
+        {
+            Assert(string.Equals(window.Language.IetfLanguageTag, "en-US", StringComparison.OrdinalIgnoreCase),
+                "The application chrome uses English independently of the Windows language.");
+            var board = Field<Grid>(window, "board");
+            string[] headers = board.Children.OfType<Border>().Where(element => Grid.GetRow(element) == 0)
+                .OrderBy(element => Grid.GetColumn(element)).Select(element => Descendants<TextBlock>(element).Single().Text).ToArray();
+            Assert(headers.SequenceEqual(BoardLabels.DayNames), "All seven weekday headers use the shared English labels.");
+            var current = Descendants<Button>((DependencyObject)window.Content)
+                .Single(button => AutomationProperties.GetName(button) == "This week");
+            Assert((string)current.Content == "This week", "The current-week action clearly says This week instead of using a home symbol.");
+            Assert(Field<TextBlock>(window, "week").Text == BoardLabels.Week(WeeklyPlanner.CurrentWeekStart(Field<BoardState>(window, "state"))),
+                "The selected ISO week remains visible in the toolbar.");
+            string remaining = Field<TextBlock>(window, "remaining").Text;
+            Assert(remaining.StartsWith("Month left ", StringComparison.Ordinal) && remaining.Contains("%   /   Year left ") && remaining.EndsWith("%", StringComparison.Ordinal),
+                "The month and year remaining percentages stay visible with explicit English labels.");
+
+            double width = window.Width, height = window.Height;
+            try
+            {
+                window.Width = window.MinWidth;
+                window.Height = window.MinHeight;
+                Layout(window);
+                var root = (UIElement)window.Content;
+                var metrics = Field<TextBlock>(window, "remaining");
+                Assert(current.TranslatePoint(new Point(current.ActualWidth, 0), root).X <=
+                    metrics.TranslatePoint(new Point(), root).X + 1,
+                    "The This week control and remaining percentages do not overlap at the minimum window width.");
+                var footer = Field<DayClearButton[]>(window, "clearButtons")[0];
+                var label = Descendants<TextBlock>(footer).Single(text => text.Text == "Clear day");
+                Assert(label.DesiredSize.Width + 12 <= footer.ActualWidth + 1,
+                    "The English clear label fits the narrowest day column.");
+                Invoke(footer, "SetRevealed", true, false);
+                SavePreview(window, "minimum-board-preview.png");
+                Invoke(footer, "SetRevealed", false, false);
+            }
+            finally
+            {
+                window.Width = width;
+                window.Height = height;
+                Layout(window);
+            }
+
+            var confirmation = BoardDialog.Create(null, "Clear synthetic tasks?", "Clear day", "Clear");
+            try
+            {
+                var actions = Descendants<Button>((DependencyObject)confirmation.Content).ToArray();
+                Assert(actions.Length == 2 && actions.Any(button => (string)button.Content == "Clear") &&
+                    actions.Any(button => (string)button.Content == "Cancel" && button.IsDefault && button.IsCancel),
+                    "The English clear confirmation defaults to Cancel.");
+            }
+            finally { confirmation.Close(); }
         }
 
         private static void AssertDragPreviewAndDrop(MainWindow window, BoardState state,
@@ -316,7 +501,7 @@ namespace TaskBoard.Tests
             string textColor = card.Item.Color;
             int beforeColor = undo.Count;
             var palette = OpenTaskPalette(card, true);
-            Assert(card.IsPaletteOpen && card.ContextMenu.Items.OfType<MenuItem>().Any(i => (string)i.Header == "背景色"),
+            Assert(card.IsPaletteOpen && card.ContextMenu.Items.OfType<MenuItem>().Any(i => (string)i.Header == "Background color"),
                 "The task context menu opens the background-color palette.");
             ChooseSwatch(palette, "#FFF4CC");
             Assert(card.Item.BackgroundColor == "#FFF4CC" && card.Item.Color == textColor &&
@@ -344,7 +529,7 @@ namespace TaskBoard.Tests
             PressEnter(hex);
             Assert(card.Item.BackgroundColor == "#E4EFFA" && !card.IsPaletteOpen,
                 "Custom hex fill is validated, normalized and applied through the palette editor.");
-            ChooseSwatch(OpenTaskPalette(card, true), "无填充");
+            ChooseSwatch(OpenTaskPalette(card, true), "No fill");
             Assert(card.Item.BackgroundColor == null, "The palette can clear a task's background fill.");
             Invoke(window, "SaveNow");
             Assert(store.Load().Tasks.Single(t => t.Id == ordinaryId).BackgroundColor == null,
@@ -398,7 +583,7 @@ namespace TaskBoard.Tests
 
         private static ColorPalette OpenTaskPalette(TaskCard card, bool background)
         {
-            card.ContextMenu.Items.OfType<MenuItem>().Single(i => (string)i.Header == (background ? "背景色" : "颜色"))
+            card.ContextMenu.Items.OfType<MenuItem>().Single(i => (string)i.Header == (background ? "Background color" : "Text color"))
                 .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             return Field<ColorPalette>(card, background ? "backgroundPalette" : "palette");
         }
@@ -507,9 +692,9 @@ namespace TaskBoard.Tests
             string baseLabel = Field<TextBlock>(window, "week").Text;
             string[] baseIds = state.Tasks.Select(t => t.Id).OrderBy(id => id).ToArray();
             var navigation = Descendants<Button>((DependencyObject)window.Content).ToArray();
-            var previous = navigation.Single(b => AutomationProperties.GetName(b) == "上一周");
-            var next = navigation.Single(b => AutomationProperties.GetName(b) == "下一周");
-            var current = navigation.Single(b => AutomationProperties.GetName(b) == "回到本周");
+            var previous = navigation.Single(b => AutomationProperties.GetName(b) == "Previous week");
+            var next = navigation.Single(b => AutomationProperties.GetName(b) == "Next week");
+            var current = navigation.Single(b => AutomationProperties.GetName(b) == "This week");
             int undoCount = Field<Stack<List<TaskItem>>>(window, "undo").Count;
             current.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert(Field<Stack<List<TaskItem>>>(window, "undo").Count == undoCount, "Returning to an already selected current week preserves undo.");

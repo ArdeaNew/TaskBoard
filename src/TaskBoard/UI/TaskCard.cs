@@ -104,7 +104,7 @@ namespace TaskBoard.UI
                 Visibility = Visibility.Collapsed
             };
             TextBlock.SetLineHeight(editor, 20);
-            AutomationProperties.SetName(editor, "任务");
+            AutomationProperties.SetName(editor, "Task");
             content.Children.Add(display);
             content.Children.Add(editor);
             ordinalDisplay = new TextBlock
@@ -127,7 +127,7 @@ namespace TaskBoard.UI
             content.Children.Add(grip);
 
             colorDot = new Ellipse { Width = 5, Height = 5 };
-            colorButton = MinimalButton.Create(colorDot, "颜色");
+            colorButton = MinimalButton.Create(colorDot, "Text color");
             colorButton.Width = 16;
             colorButton.Height = 20;
             colorButton.Margin = new Thickness(0, 0, 12, 0);
@@ -149,7 +149,7 @@ namespace TaskBoard.UI
                 CornerRadius = new CornerRadius(0.5), Background = Brushes.White,
                 BorderBrush = incompleteBrush
             };
-            completionButton = MinimalButton.Create(completionSquare, "完成");
+            completionButton = MinimalButton.Create(completionSquare, "Complete");
             completionButton.Width = completionButton.Height = 20;
             completionButton.Margin = new Thickness(0, 0, -10, 0);
             completionButton.HorizontalAlignment = HorizontalAlignment.Right;
@@ -172,9 +172,9 @@ namespace TaskBoard.UI
             Child = content;
 
             palette = new ColorPalette(new[] { "#111111", "#6B7280", "#B94A48", "#C27B2F", "#927538", "#4A7555", "#426787", "#785C93", "#A25B78", "#2D7C7B" },
-                false, "自定颜色", ChooseColor, RestoreEditorFocus);
+                false, "Custom text color", ChooseColor, RestoreEditorFocus);
             backgroundPalette = new ColorPalette(new[] { "#FFF4CC", "#FCE4E4", "#FBEAD6", "#E8F0DD", "#DCF0E7", "#E4EFFA", "#EAE6F7", "#F4E3F0", "#EFEAE3", "#EEF0F3" },
-                true, "自定背景色", color => ApplyColor(color, true), RestoreEditorFocus);
+                true, "Custom background color", color => ApplyColor(color, true), RestoreEditorFocus);
             palette.Closed += OnPaletteClosed;
             backgroundPalette.Closed += OnPaletteClosed;
             actions = BuildActions();
@@ -281,7 +281,7 @@ namespace TaskBoard.UI
             colorDot.Fill = brush;
             completionSquare.Background = Item.IsCompleted ? completedBrush : Brushes.White;
             completionSquare.BorderBrush = Item.IsCompleted ? completedBrush : incompleteBrush;
-            string completionName = Item.IsCompleted ? "取消完成" : "完成";
+            string completionName = Item.IsCompleted ? "Mark incomplete" : "Complete";
             completionButton.ToolTip = completionName;
             AutomationProperties.SetName(completionButton, completionName);
             AutomationProperties.SetName(this, Item.Text ?? string.Empty);
@@ -390,15 +390,15 @@ namespace TaskBoard.UI
         private ContextMenu BuildActions()
         {
             var menu = new ContextMenu { FontFamily = Typography.TaskFont, FontSize = 13 };
-            var edit = new MenuItem { Header = "编辑" };
+            var edit = new MenuItem { Header = "Edit" };
             edit.Click += (s, e) => BeginEdit();
-            var color = new MenuItem { Header = "颜色" };
+            var color = new MenuItem { Header = "Text color" };
             color.Click += (s, e) => OpenPalette();
-            var background = new MenuItem { Header = "背景色" };
+            var background = new MenuItem { Header = "Background color" };
             background.Click += (s, e) => OpenBackgroundPalette();
-            var delete = new MenuItem { Header = "删除" };
+            var delete = new MenuItem { Header = "Delete" };
             delete.Click += (s, e) => RequestDelete();
-            var everyDay = new MenuItem { Header = "应用到每天" };
+            var everyDay = new MenuItem { Header = "Apply to every day" };
             everyDay.Click += (s, e) =>
             {
                 bool blankEdit = isEditing && string.IsNullOrWhiteSpace(editor.Text);

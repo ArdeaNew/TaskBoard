@@ -81,7 +81,7 @@ namespace TaskBoard.UI
             stack.Children.Add(hexEditor);
             if (allowClear)
             {
-                var clear = MinimalButton.Create("无填充", "无填充");
+                var clear = MinimalButton.Create("No fill", "No fill");
                 clear.FontFamily = Typography.TaskFont;
                 clear.FontSize = 12;
                 clear.Height = 25;

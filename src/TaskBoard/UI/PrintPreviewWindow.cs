@@ -20,7 +20,7 @@ namespace TaskBoard.UI
 
         internal PrintPreviewWindow(BoardPage page)
         {
-            Title = "打印预览";
+            Title = "Print preview";
             FontFamily = Typography.TaskFont;
             FontSize = 13;
             Background = Brushes.White;
@@ -34,19 +34,19 @@ namespace TaskBoard.UI
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
             root.RowDefinitions.Add(new RowDefinition());
             var toolbar = new DockPanel { Margin = new Thickness(12, 6, 12, 6), LastChildFill = false };
-            var print = ToolbarButton("打印", "打印", 70);
+            var print = ToolbarButton("Print", "Print", 70);
             print.Click += (s, e) => { var handler = PrintRequested; if (handler != null) handler(this, EventArgs.Empty); };
             DockPanel.SetDock(print, Dock.Right);
             toolbar.Children.Add(print);
-            var minus = ToolbarButton("−", "缩小", 32);
+            var minus = ToolbarButton("−", "Zoom out", 32);
             minus.Click += (s, e) => SetZoom(ZoomScale / 1.2);
             toolbar.Children.Add(minus);
             zoomLabel = new TextBlock { Width = 56, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             toolbar.Children.Add(zoomLabel);
-            var plus = ToolbarButton("+", "放大", 32);
+            var plus = ToolbarButton("+", "Zoom in", 32);
             plus.Click += (s, e) => SetZoom(ZoomScale * 1.2);
             toolbar.Children.Add(plus);
-            var fit = ToolbarButton("适合页面", "适合页面", 92);
+            var fit = ToolbarButton("Fit page", "Fit page", 92);
             fit.Margin = new Thickness(10, 0, 0, 0);
             fit.Click += (s, e) => FitToPage();
             toolbar.Children.Add(fit);
