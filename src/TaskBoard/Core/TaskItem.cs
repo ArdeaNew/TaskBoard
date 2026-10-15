@@ -33,6 +33,9 @@ namespace TaskBoard.Core
         [DataMember(Name = "isCompleted", Order = 5, EmitDefaultValue = false)]
         public bool IsCompleted { get; set; }
 
+        [DataMember(Name = "backgroundColor", Order = 6, EmitDefaultValue = false)]
+        public string BackgroundColor { get; set; }
+
         public bool IsDaily { get { return !string.IsNullOrEmpty(DailyGroupId); } }
     }
 }

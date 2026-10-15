@@ -288,26 +288,14 @@ namespace TaskBoard.Persistence
                 {
                     Id = id,
                     Text = task.Text ?? string.Empty,
-                    Color = ValidColor(task.Color) ? task.Color.ToUpperInvariant() : "#111111",
+                    Color = TaskColors.NormalizeHex(task.Color) ?? "#111111",
                     Column = task.Column >= 1 && task.Column <= 7 ? task.Column : 1,
                     DailyGroupId = task.DailyGroupId,
-                    IsCompleted = task.IsCompleted
+                    IsCompleted = task.IsCompleted,
+                    BackgroundColor = TaskColors.NormalizeHex(task.BackgroundColor)
                 });
             }
             return result;
-        }
-
-        private static bool ValidColor(string color)
-        {
-            if (color == null || color.Length != 7 || color[0] != '#')
-                return false;
-            for (int i = 1; i < color.Length; i++)
-            {
-                char c = color[i];
-                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
-                    return false;
-            }
-            return true;
         }
 
         private static bool IsReadFailure(Exception error)

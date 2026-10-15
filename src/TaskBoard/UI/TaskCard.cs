@@ -28,8 +28,8 @@ namespace TaskBoard.UI
         private readonly Ellipse colorDot;
         private readonly Button completionButton;
         private readonly Border completionSquare;
-        private readonly Popup palette;
-        private readonly TextBox hexEditor;
+        private readonly ColorPalette palette;
+        private readonly ColorPalette backgroundPalette;
         private readonly ContextMenu actions;
         private bool isEditing;
         private bool isNew;
@@ -39,11 +39,13 @@ namespace TaskBoard.UI
         private bool completionInteraction;
         private string originalText;
         private string originalColor;
+        private string originalBackgroundColor;
+        private Brush backgroundFill;
         private int ordinal;
 
         public TaskItem Item { get; private set; }
         public bool IsEditing { get { return isEditing; } }
-        public bool IsPaletteOpen { get { return palette.IsOpen; } }
+        public bool IsPaletteOpen { get { return palette.IsOpen || backgroundPalette.IsOpen; } }
         public int Ordinal
         {
             get { return ordinal; }
@@ -125,7 +127,7 @@ namespace TaskBoard.UI
             content.Children.Add(grip);
 
             colorDot = new Ellipse { Width = 5, Height = 5 };
-            colorButton = PlainButton(colorDot, "颜色");
+            colorButton = MinimalButton.Create(colorDot, "颜色");
             colorButton.Width = 16;
             colorButton.Height = 20;
             colorButton.Margin = new Thickness(0, 0, 12, 0);
@@ -134,7 +136,7 @@ namespace TaskBoard.UI
             colorButton.PreviewMouseLeftButtonDown += (s, e) => paletteInteraction = true;
             colorButton.LostMouseCapture += (s, e) => Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (palette.IsOpen) return;
+                if (IsPaletteOpen) return;
                 paletteInteraction = false;
                 CommitAfterFocusLeaves();
             }), DispatcherPriority.Background);
@@ -147,7 +149,7 @@ namespace TaskBoard.UI
                 CornerRadius = new CornerRadius(0.5), Background = Brushes.White,
                 BorderBrush = incompleteBrush
             };
-            completionButton = PlainButton(completionSquare, "完成");
+            completionButton = MinimalButton.Create(completionSquare, "完成");
             completionButton.Width = completionButton.Height = 20;
             completionButton.Margin = new Thickness(0, 0, -10, 0);
             completionButton.HorizontalAlignment = HorizontalAlignment.Right;
@@ -169,13 +171,12 @@ namespace TaskBoard.UI
             content.Children.Add(completionButton);
             Child = content;
 
-            palette = BuildPalette(out hexEditor);
-            palette.Closed += (s, e) =>
-            {
-                paletteInteraction = false;
-                RefreshChrome();
-                CommitAfterFocusLeaves();
-            };
+            palette = new ColorPalette(new[] { "#111111", "#6B7280", "#B94A48", "#C27B2F", "#927538", "#4A7555", "#426787", "#785C93", "#A25B78", "#2D7C7B" },
+                false, "自定颜色", ChooseColor, RestoreEditorFocus);
+            backgroundPalette = new ColorPalette(new[] { "#FFF4CC", "#FCE4E4", "#FBEAD6", "#E8F0DD", "#DCF0E7", "#E4EFFA", "#EAE6F7", "#F4E3F0", "#EFEAE3", "#EEF0F3" },
+                true, "自定背景色", color => ApplyColor(color, true), RestoreEditorFocus);
+            palette.Closed += OnPaletteClosed;
+            backgroundPalette.Closed += OnPaletteClosed;
             actions = BuildActions();
             ContextMenu = actions;
             // TextBox supplies its own default editing menu. Explicit ownership
@@ -202,17 +203,18 @@ namespace TaskBoard.UI
             // composition lifetime for input methods that send a regular Enter.
             TextCompositionManager.AddPreviewTextInputStartHandler(editor, (s, e) => isComposing = true);
             editor.PreviewTextInput += (s, e) => isComposing = false;
-            Unloaded += (s, e) => { if (palette.IsOpen) palette.IsOpen = false; };
+            Unloaded += (s, e) => ClosePalettes();
             RefreshAppearance();
         }
 
         public void BeginEdit(bool isNew = false)
         {
             if (isEditing) { editor.Focus(); return; }
-            palette.IsOpen = false;
+            ClosePalettes();
             this.isNew = isNew;
             originalText = Item.Text ?? string.Empty;
             originalColor = Item.Color;
+            originalBackgroundColor = Item.BackgroundColor;
             editor.Text = originalText;
             isEditing = true;
             isComposing = false;
@@ -238,6 +240,7 @@ namespace TaskBoard.UI
                 // deletion, so undo can restore the previous text and color.
                 Item.Text = originalText;
                 Item.Color = originalColor;
+                Item.BackgroundColor = originalBackgroundColor;
                 FinishEditing();
                 Raise(isNew ? Cancelled : DeleteRequested);
                 return;
@@ -252,6 +255,7 @@ namespace TaskBoard.UI
             if (!isEditing) return;
             Item.Text = originalText;
             Item.Color = originalColor;
+            Item.BackgroundColor = originalBackgroundColor;
             FinishEditing();
             Raise(Cancelled);
         }
@@ -260,7 +264,7 @@ namespace TaskBoard.UI
         {
             isEditing = false;
             isComposing = false;
-            palette.IsOpen = false;
+            ClosePalettes();
             editor.Visibility = Visibility.Collapsed;
             display.Visibility = Visibility.Visible;
             RefreshAppearance();
@@ -270,10 +274,8 @@ namespace TaskBoard.UI
         {
             display.Text = Item.Text ?? string.Empty;
             UpdateOrdinal();
-            Color color;
-            if (!TryParseColor(Item.Color, out color)) color = Color.FromRgb(17, 17, 17);
-            var brush = new SolidColorBrush(color);
-            brush.Freeze();
+            Brush brush = ColorPalette.CreateBrush(Item.Color) ?? FrozenBrush("#111111");
+            backgroundFill = ColorPalette.CreateBrush(Item.BackgroundColor);
             display.Foreground = editor.Foreground = brush;
             editor.CaretBrush = brush;
             colorDot.Fill = brush;
@@ -317,8 +319,8 @@ namespace TaskBoard.UI
 
         private void RefreshChrome()
         {
-            bool active = !isDragging && (IsMouseOver || IsKeyboardFocusWithin || isEditing || palette.IsOpen || actions.IsOpen);
-            Background = active ? hoverBrush : Brushes.White;
+            bool active = !isDragging && (IsMouseOver || IsKeyboardFocusWithin || isEditing || IsPaletteOpen || actions.IsOpen);
+            Background = backgroundFill ?? (active ? hoverBrush : Brushes.White);
             grip.Opacity = active ? 0.7 : 0;
             colorButton.Opacity = active ? 1 : 0;
             colorButton.IsHitTestVisible = active;
@@ -338,10 +340,10 @@ namespace TaskBoard.UI
 
         private void OnCardKeyDown(object sender, KeyEventArgs e)
         {
-            if (palette.IsOpen && e.Key == Key.Escape)
+            if (IsPaletteOpen && e.Key == Key.Escape)
             {
-                palette.IsOpen = false;
-                if (isEditing) editor.Focus(); else Focus();
+                ClosePalettes();
+                RestoreEditorFocus();
                 e.Handled = true;
                 return;
             }
@@ -380,7 +382,7 @@ namespace TaskBoard.UI
             if (!isEditing) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (isEditing && !editor.IsKeyboardFocusWithin && !paletteInteraction && !completionInteraction && !palette.IsOpen && !actions.IsOpen)
+                if (isEditing && !editor.IsKeyboardFocusWithin && !paletteInteraction && !completionInteraction && !IsPaletteOpen && !actions.IsOpen)
                     CommitEdit();
             }), DispatcherPriority.Background);
         }
@@ -392,6 +394,8 @@ namespace TaskBoard.UI
             edit.Click += (s, e) => BeginEdit();
             var color = new MenuItem { Header = "颜色" };
             color.Click += (s, e) => OpenPalette();
+            var background = new MenuItem { Header = "背景色" };
+            background.Click += (s, e) => OpenBackgroundPalette();
             var delete = new MenuItem { Header = "删除" };
             delete.Click += (s, e) => RequestDelete();
             var everyDay = new MenuItem { Header = "应用到每天" };
@@ -403,6 +407,7 @@ namespace TaskBoard.UI
             };
             menu.Items.Add(edit);
             menu.Items.Add(color);
+            menu.Items.Add(background);
             menu.Items.Add(everyDay);
             menu.Items.Add(delete);
             return menu;
@@ -415,90 +420,65 @@ namespace TaskBoard.UI
                 if (isNew && string.IsNullOrWhiteSpace(originalText)) { CancelEdit(); return; }
                 Item.Text = originalText;
                 Item.Color = originalColor;
+                Item.BackgroundColor = originalBackgroundColor;
                 FinishEditing();
             }
             Raise(DeleteRequested);
         }
 
-        private Popup BuildPalette(out TextBox customColor)
-        {
-            var stack = new StackPanel();
-            var swatches = new UniformGrid { Rows = 2, Columns = 5 };
-            string[] colors = { "#111111", "#6B7280", "#B94A48", "#C27B2F", "#927538", "#4A7555", "#426787", "#785C93", "#A25B78", "#2D7C7B" };
-            foreach (string value in colors)
-            {
-                string selected = value;
-                var dot = new Ellipse { Width = 13, Height = 13, Fill = FrozenBrush(value) };
-                var button = PlainButton(dot, value);
-                button.Width = 31;
-                button.Height = 29;
-                button.Click += (s, e) => { ChooseColor(selected); e.Handled = true; };
-                swatches.Children.Add(button);
-            }
-            stack.Children.Add(swatches);
-            var input = new TextBox
-            {
-                FontFamily = Typography.TaskFont, FontSize = 12,
-                MaxLength = 7, Margin = new Thickness(5, 7, 5, 3),
-                Padding = new Thickness(6, 4, 6, 4),
-                BorderBrush = lineBrush, BorderThickness = new Thickness(1),
-                Background = Brushes.White, Foreground = Brushes.Black
-            };
-            InputMethod.SetIsInputMethodEnabled(input, false);
-            AutomationProperties.SetName(input, "自定颜色");
-            input.ToolTip = "#RRGGBB";
-            input.PreviewKeyDown += (s, e) =>
-            {
-                if (e.Key != Key.Enter) return;
-                Color color;
-                if (TryParseColor(input.Text, out color)) ChooseColor(input.Text.ToUpperInvariant());
-                else input.BorderBrush = FrozenBrush("#B94A48");
-                e.Handled = true;
-            };
-            input.TextChanged += (s, e) => input.BorderBrush = lineBrush;
-            stack.Children.Add(input);
-            var frame = new Border
-            {
-                Background = Brushes.White, BorderBrush = lineBrush,
-                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
-                Padding = new Thickness(6), Child = stack
-            };
-            frame.PreviewKeyDown += (s, e) =>
-            {
-                if (e.Key != Key.Escape) return;
-                palette.IsOpen = false;
-                if (isEditing) editor.Focus(); else Focus();
-                e.Handled = true;
-            };
-            customColor = input;
-            return new Popup
-            {
-                Child = frame, PlacementTarget = colorButton,
-                Placement = PlacementMode.Bottom, HorizontalOffset = -145,
-                VerticalOffset = 4, AllowsTransparency = true,
-                StaysOpen = false, PopupAnimation = PopupAnimation.Fade
-            };
-        }
-
         private void OpenPalette()
         {
+            ClosePalettes();
             paletteInteraction = true;
-            hexEditor.Text = Item.Color ?? "#111111";
-            palette.IsOpen = true;
+            palette.Open(colorButton, Item.Color);
+            RefreshChrome();
+        }
+
+        private void OpenBackgroundPalette()
+        {
+            ClosePalettes();
+            paletteInteraction = true;
+            backgroundPalette.Open(colorButton, Item.BackgroundColor);
             RefreshChrome();
         }
 
         private void ChooseColor(string color)
         {
+            ApplyColor(color, false);
+        }
+
+        private void ApplyColor(string color, bool background)
+        {
+            string normalized = TaskColors.NormalizeHex(color);
+            if (!background && normalized == null) return;
+            string current = background ? Item.BackgroundColor : Item.Color;
+            if (TaskColors.NormalizeHex(current) == normalized) return;
             if (!isEditing) Raise(EditStarted);
-            Item.Color = color;
+            if (background) Item.BackgroundColor = normalized;
+            else Item.Color = normalized;
+            RefreshAppearance();
+            if (!isEditing) Raise(Committed);
+        }
+
+        private void ClosePalettes()
+        {
             palette.IsOpen = false;
-            if (isEditing)
-            {
-                RefreshAppearance();
-                editor.Focus();
-            }
-            else { RefreshAppearance(); Raise(Committed); }
+            backgroundPalette.IsOpen = false;
+            paletteInteraction = false;
+        }
+
+        private void RestoreEditorFocus()
+        {
+            paletteInteraction = false;
+            if (isEditing) editor.Focus(); else Focus();
+            RefreshChrome();
+        }
+
+        private void OnPaletteClosed(object sender, EventArgs e)
+        {
+            paletteInteraction = IsPaletteOpen;
+            RefreshChrome();
+            CommitAfterFocusLeaves();
         }
 
         private void Raise(EventHandler handler)
@@ -506,25 +486,9 @@ namespace TaskBoard.UI
             if (handler != null) handler(this, EventArgs.Empty);
         }
 
-        private static bool TryParseColor(string value, out Color color)
-        {
-            color = Colors.Black;
-            if (string.IsNullOrEmpty(value) || value.Length != 7 || value[0] != '#') return false;
-            byte red, green, blue;
-            if (!byte.TryParse(value.Substring(1, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out red) ||
-                !byte.TryParse(value.Substring(3, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out green) ||
-                !byte.TryParse(value.Substring(5, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out blue)) return false;
-            color = Color.FromRgb(red, green, blue);
-            return true;
-        }
-
         private static Brush FrozenBrush(string value)
         {
-            Color color;
-            TryParseColor(value, out color);
-            var brush = new SolidColorBrush(color);
-            brush.Freeze();
-            return brush;
+            return ColorPalette.CreateBrush(value) ?? Brushes.Black;
         }
 
         private static FrameworkElement BuildGrip()
@@ -539,31 +503,6 @@ namespace TaskBoard.UI
                     dots.Children.Add(dot);
                 }
             return dots;
-        }
-
-        private static Button PlainButton(object content, string name)
-        {
-            var button = new Button
-            {
-                Content = content, Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0), Padding = new Thickness(0),
-                Cursor = Cursors.Hand, FocusVisualStyle = null, ToolTip = name
-            };
-            AutomationProperties.SetName(button, name);
-            var template = new ControlTemplate(typeof(Button));
-            var border = new FrameworkElementFactory(typeof(Border));
-            border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Button.BackgroundProperty));
-            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(2));
-            var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
-            presenter.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center);
-            presenter.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
-            border.AppendChild(presenter);
-            template.VisualTree = border;
-            var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
-            hover.Setters.Add(new Setter(BackgroundProperty, FrozenBrush("#ECECEC")));
-            template.Triggers.Add(hover);
-            button.Template = template;
-            return button;
         }
 
         private static bool IsInsideButton(DependencyObject source)

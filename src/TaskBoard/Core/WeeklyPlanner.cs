@@ -139,14 +139,19 @@ namespace TaskBoard.Core
             {
                 if (!source.IsDaily || !seen.Add(source.DailyGroupId)) continue;
                 for (int day = 1; day <= 7; day++)
+                {
+                    TaskItem previousDay = previous.Tasks.FirstOrDefault(task =>
+                        task.DailyGroupId == source.DailyGroupId && task.Column == day);
                     tasks.Add(new TaskItem
                     {
                         Text = source.Text,
                         Color = source.Color,
                         Column = day,
                         DailyGroupId = source.DailyGroupId,
-                        IsCompleted = false
+                        IsCompleted = false,
+                        BackgroundColor = previousDay != null ? previousDay.BackgroundColor : source.BackgroundColor
                     });
+                }
             }
             return tasks;
         }
@@ -171,7 +176,7 @@ namespace TaskBoard.Core
                 TaskItem existing = target.FirstOrDefault(item => item.Id == task.Id);
                 if (existing != null && existing.Text == task.Text && existing.Color == task.Color &&
                     existing.Column == task.Column && existing.DailyGroupId == task.DailyGroupId &&
-                    existing.IsCompleted == task.IsCompleted) continue;
+                    existing.IsCompleted == task.IsCompleted && existing.BackgroundColor == task.BackgroundColor) continue;
                 TaskItem copy = BoardOperations.CloneTasks(new[] { task })[0];
                 if (existing != null) copy.Id = Guid.NewGuid().ToString("N");
                 target.Add(copy);

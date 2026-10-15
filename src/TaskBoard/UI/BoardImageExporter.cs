@@ -34,10 +34,10 @@ namespace TaskBoard.UI
         public static void Save(BoardState state, string path)
         {
             var page = BoardPageRenderer.BuildPage(state);
-            Rect bounds = page.ContentBounds;
+            Size size = page.PageSize;
             const double scale = 2;
-            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(bounds.Width * scale),
-                (int)Math.Ceiling(bounds.Height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(size.Width * scale),
+                (int)Math.Ceiling(size.Height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             bitmap.Render(page);
             var encoder = new PngBitmapEncoder();
             encoder.Frames.Add(BitmapFrame.Create(bitmap));

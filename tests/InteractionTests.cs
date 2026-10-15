@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using TaskBoard.Core;
@@ -108,6 +109,7 @@ namespace TaskBoard.Tests
                 var loaded = store.Load();
                 Assert(loaded.Tasks.Count == 8 && loaded.Tasks.Count(t => t.IsDaily) == 7, "Daily tasks survive UI save.");
                 Assert(loaded.Tasks.Single(t => t.Id == completedId).IsCompleted, "Independent completion state survives UI save.");
+                AssertTaskBackgroundColors(window, store, state, panels, normalId, completedId);
                 string exportPath = Path.Combine(workspace, "exported-board.png");
                 BoardImageExporter.Save(state, exportPath);
                 Assert(File.ReadAllBytes(exportPath).Take(8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }),
@@ -227,6 +229,9 @@ namespace TaskBoard.Tests
                 Assert(((SolidColorBrush)Field<TextBlock>(preview, "display").Foreground).Color ==
                     ((SolidColorBrush)Field<TextBlock>(card, "display").Foreground).Color,
                     "Drag preview preserves the individual text color.");
+                Assert(card.Item.BackgroundColor == "#FFF4CC" &&
+                    ((SolidColorBrush)preview.Background).Color == ((SolidColorBrush)card.Background).Color,
+                    "The live drag preview preserves the full task background fill.");
                 Assert(gap.BorderThickness == card.BorderThickness && gap.CornerRadius == card.CornerRadius,
                     "Drop placeholder uses the same border geometry as a task card.");
                 Assert(Field<DayClearButton[]>(window, "clearButtons").All(button => !button.IsAvailable),
@@ -258,6 +263,9 @@ namespace TaskBoard.Tests
                     "Cross-column drop commits the target day and ordinal exactly once.");
                 Assert(Math.Abs(landed.ActualWidth - panels[1].ActualWidth) < 1 && Math.Abs(landed.ActualHeight - landingHeight) < 1,
                     "The landed card matches the live preview's width and wrapped height.");
+                Assert(landed.Item.BackgroundColor == "#FFF4CC" &&
+                    ((SolidColorBrush)landed.Background).Color == Color.FromRgb(255, 244, 204),
+                    "Dropping a filled task preserves its background color.");
                 AssertDropClean(window, landed);
 
                 int undoBeforeCancel = undo.Count;
@@ -298,6 +306,121 @@ namespace TaskBoard.Tests
                 for (int index = 0; index < panels.Length; index++) panels[index].Animate = animated[index];
                 Layout(window);
             }
+        }
+
+        private static void AssertTaskBackgroundColors(MainWindow window, BoardStore store, BoardState state,
+            ColumnPanel[] panels, string ordinaryId, string dailyId)
+        {
+            var undo = Field<Stack<List<TaskItem>>>(window, "undo");
+            var card = panels.SelectMany(p => p.Children.OfType<TaskCard>()).Single(c => c.Item.Id == ordinaryId);
+            string textColor = card.Item.Color;
+            int beforeColor = undo.Count;
+            var palette = OpenTaskPalette(card, true);
+            Assert(card.IsPaletteOpen && card.ContextMenu.Items.OfType<MenuItem>().Any(i => (string)i.Header == "背景色"),
+                "The task context menu opens the background-color palette.");
+            ChooseSwatch(palette, "#FFF4CC");
+            Assert(card.Item.BackgroundColor == "#FFF4CC" && card.Item.Color == textColor &&
+                ((SolidColorBrush)card.Background).Color == Color.FromRgb(255, 244, 204),
+                "A preset fills the task border and padding without changing its text color.");
+            Assert(undo.Count == beforeColor + 1 && undo.Peek().Single(t => t.Id == ordinaryId).BackgroundColor == null,
+                "Changing a background records its original unfilled state for undo.");
+            Invoke(window, "SaveNow");
+            Assert(store.Load().Tasks.Single(t => t.Id == ordinaryId).BackgroundColor == "#FFF4CC",
+                "The selected task fill survives a UI save.");
+
+            state.Tasks = undo.Pop();
+            Invoke(window, "RenderTasks");
+            Invoke(window, "QueueSave");
+            card = panels.SelectMany(p => p.Children.OfType<TaskCard>()).Single(c => c.Item.Id == ordinaryId);
+            Assert(card.Item.BackgroundColor == null && ((SolidColorBrush)card.Background).Color == Colors.White,
+                "Applying the undo snapshot restores the task's unfilled appearance.");
+            palette = OpenTaskPalette(card, true);
+            var hex = Descendants<TextBox>(palette.Child).Single();
+            hex.Text = "#ZZZZZZ";
+            PressEnter(hex);
+            Assert(card.Item.BackgroundColor == null && card.IsPaletteOpen,
+                "Invalid custom fill leaves the task unchanged and the palette open.");
+            hex.Text = "#e4effa";
+            PressEnter(hex);
+            Assert(card.Item.BackgroundColor == "#E4EFFA" && !card.IsPaletteOpen,
+                "Custom hex fill is validated, normalized and applied through the palette editor.");
+            ChooseSwatch(OpenTaskPalette(card, true), "无填充");
+            Assert(card.Item.BackgroundColor == null, "The palette can clear a task's background fill.");
+            Invoke(window, "SaveNow");
+            Assert(store.Load().Tasks.Single(t => t.Id == ordinaryId).BackgroundColor == null,
+                "Clearing a fill saves the unfilled state.");
+            ChooseSwatch(OpenTaskPalette(card, true), "#FFF4CC");
+
+            int beforeCancel = undo.Count;
+            string originalText = card.Item.Text;
+            card.BeginEdit();
+            var editor = Field<TextBox>(card, "editor");
+            editor.Text = originalText + " pending";
+            Assert(((SolidColorBrush)card.Background).Color == Color.FromRgb(255, 244, 204),
+                "Editing/focus styling retains the chosen background fill.");
+            Assert(ReferenceEquals(editor.ContextMenu, card.ContextMenu),
+                "An active editor exposes the same background-color action.");
+            ChooseSwatch(OpenTaskPalette(card, true), "#DCF0E7");
+            Assert(card.IsEditing && editor.Text == originalText + " pending" && card.Item.BackgroundColor == "#DCF0E7",
+                "Choosing a fill during editing preserves the pending text and edit session.");
+            card.CancelEdit();
+            Assert(card.Item.Text == originalText && card.Item.BackgroundColor == "#FFF4CC" && undo.Count == beforeCancel,
+                "Cancelling an edit restores the original text and fill without adding undo entries.");
+
+            Invoke(window, "AddTask", 3);
+            var draft = panels[3].Children.OfType<TaskCard>().Single(c => string.IsNullOrWhiteSpace(c.Item.Text));
+            string draftId = draft.Item.Id;
+            ChooseSwatch(OpenTaskPalette(draft, true), "#FCE4E4");
+            Assert(draft.IsEditing && state.Tasks.Contains(draft.Item) && draft.Item.BackgroundColor == "#FCE4E4",
+                "Choosing a fill for a blank new draft does not discard it.");
+            Invoke(window, "SaveNow");
+            Assert(!store.Load().Tasks.Any(t => t.Id == draftId),
+                "A draft's pending fill does not cause an empty task to be autosaved.");
+            draft.CancelEdit();
+            Assert(!state.Tasks.Any(t => t.Id == draftId), "Cancelling a filled blank draft removes it cleanly.");
+
+            var daily = panels.SelectMany(p => p.Children.OfType<TaskCard>()).Single(c => c.Item.Id == dailyId);
+            ChooseSwatch(OpenTaskPalette(daily, true), "#E8F0DD");
+            Assert(state.Tasks.Where(t => t.IsDaily && t.Id != dailyId).All(t => t.BackgroundColor == null),
+                "A daily task's background remains independent from its copies on other days.");
+            var peer = panels.SelectMany(p => p.Children.OfType<TaskCard>()).First(c => c.Item.IsDaily && c.Item.Id != dailyId);
+            ChooseSwatch(OpenTaskPalette(peer, false), "#785C93");
+            Assert(state.Tasks.Where(t => t.IsDaily).All(t => t.Color == "#785C93") &&
+                daily.Item.BackgroundColor == "#E8F0DD" &&
+                state.Tasks.Where(t => t.IsDaily && t.Id != dailyId).All(t => t.BackgroundColor == null),
+                "Shared daily text-color changes preserve every day's independent fill.");
+            Invoke(window, "SaveNow");
+            var saved = store.Load();
+            Assert(saved.Tasks.Single(t => t.Id == dailyId).BackgroundColor == "#E8F0DD" &&
+                saved.Tasks.Where(t => t.IsDaily && t.Id != dailyId).All(t => t.BackgroundColor == null),
+                "Independent daily background colors persist without spreading to peer days.");
+        }
+
+        private static ColorPalette OpenTaskPalette(TaskCard card, bool background)
+        {
+            card.ContextMenu.Items.OfType<MenuItem>().Single(i => (string)i.Header == (background ? "背景色" : "颜色"))
+                .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            return Field<ColorPalette>(card, background ? "backgroundPalette" : "palette");
+        }
+
+        private static void ChooseSwatch(ColorPalette palette, string name)
+        {
+            Descendants<Button>(palette.Child).Single(b => AutomationProperties.GetName(b) == name)
+                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }
+
+        private static void PressEnter(TextBox editor)
+        {
+            editor.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,
+                PresentationSource.FromVisual(editor) ?? new DetachedPresentationSource(), 0, Key.Enter)
+            { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+        }
+
+        private sealed class DetachedPresentationSource : PresentationSource
+        {
+            public override Visual RootVisual { get; set; }
+            public override bool IsDisposed { get { return false; } }
+            protected override CompositionTarget GetCompositionTargetCore() { return null; }
         }
 
         private static void AssertDropClean(MainWindow window, TaskCard card)

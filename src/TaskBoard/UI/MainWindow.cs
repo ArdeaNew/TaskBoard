@@ -196,30 +196,12 @@ namespace TaskBoard.UI
 
         private static Button IconButton(string text, string name)
         {
-            var button = new Button
-            {
-                Content = text, Width = 26, Height = 28, Padding = new Thickness(0),
-                Background = Brushes.Transparent, BorderThickness = new Thickness(0),
-                Foreground = Brushes.Black, Cursor = Cursors.Hand, ToolTip = name,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            AutomationProperties.SetName(button, name);
-            var template = new ControlTemplate(typeof(Button));
-            var border = new FrameworkElementFactory(typeof(Border));
-            border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Button.BackgroundProperty));
-            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(3));
-            var content = new FrameworkElementFactory(typeof(ContentPresenter));
-            content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-            content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-            border.AppendChild(content);
-            template.VisualTree = border;
-            var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
-            hover.Setters.Add(new Setter(BackgroundProperty, new SolidColorBrush(Color.FromRgb(242, 242, 242))));
-            template.Triggers.Add(hover);
-            button.Template = template;
+            var button = MinimalButton.Create(text, name);
+            button.Width = 26;
+            button.Height = 28;
+            button.VerticalAlignment = VerticalAlignment.Center;
             return button;
         }
-
         private void RenderTasks()
         {
             dragController.CompleteDropAnimation();
@@ -377,20 +359,20 @@ namespace TaskBoard.UI
 
         private void Print()
         {
-            dragController.Cancel();
-            dragController.CompleteDropAnimation();
-            if (editing != null) editing.CommitEdit();
-            SaveNow();
-            BoardPrinter.Print(this, state);
+            if (PrepareOutput()) BoardPrinter.Print(this, state);
         }
 
         private void ExportImage()
         {
+            if (PrepareOutput()) BoardImageExporter.Export(this, state);
+        }
+
+        private bool PrepareOutput()
+        {
             dragController.Cancel();
             dragController.CompleteDropAnimation();
             if (editing != null) editing.CommitEdit();
-            SaveNow();
-            BoardImageExporter.Export(this, state);
+            return SaveNow();
         }
 
         private void UpdateDate()

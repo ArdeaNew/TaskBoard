@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -42,22 +41,24 @@ namespace TaskBoard.Tests
         public static void Run()
         {
             EmptyPageAndDate();
+            WeekdayVectorOutlines();
             SelectedWeekMetadata();
             WeekdayMapping();
             PerDayTaskNumbers();
             LargePrinterMargins();
             TaskBoxesAndFullHeight();
+            TaskBackgrounds();
             CompletedTaskMarkers();
             DenseMultilingualTasks();
         }
 
         private static void EmptyPageAndDate()
         {
-            DrawingVisual page = Build(new BoardState(), new Rect(new Point(), A4));
+            BoardPage page = Build(new BoardState(), new Rect(new Point(), A4));
             Rect bounds = page.ContentBounds;
             Assert(Near(bounds.Left, 0) && Near(bounds.Top, 0) &&
                 Near(bounds.Width, A4.Width) && Near(bounds.Height, A4.Height), "Physical A4 landscape bounds.");
-            string text = ReadText(page.Drawing);
+            string text = ReadText(page);
             Assert(text.Contains("2026 / W42"), "Deterministic ISO week and year.");
             Assert(text.Contains("月余 54.8%") && text.Contains("年余 21.4%"), "Current-day-inclusive remaining percentages.");
             foreach (string header in new[] { "周一", "周二", "周三", "周四", "周五", "周六", "周日" })
@@ -81,15 +82,35 @@ namespace TaskBoard.Tests
             state.Tasks.Add(new TaskItem { Column = 0, Text = "LEGACY", Color = "#202020" });
             state.Tasks.Add(new TaskItem { Column = 1, Text = "MONDAY", Color = "#202020" });
             state.Tasks.Add(new TaskItem { Column = 7, Text = "SUNDAY", Color = "#202020" });
-            DrawingVisual page = Build(state, new Rect(new Point(), A4));
-            string text = ReadText(page.Drawing);
+            BoardPage page = Build(state, new Rect(new Point(), A4));
+            string text = ReadText(page);
             Assert(text.Contains("LEGACY") && text.Contains("MONDAY") && text.Contains("SUNDAY"),
                 "Legacy, Monday and Sunday tasks are all printed.");
-            Rect legacy = FindGlyphBounds(page.Drawing, "LEGACY");
-            Rect monday = FindGlyphBounds(page.Drawing, "MONDAY");
-            Rect sunday = FindGlyphBounds(page.Drawing, "SUNDAY");
+            Rect legacy = FindTextBounds(page, "LEGACY");
+            Rect monday = FindTextBounds(page, "MONDAY");
+            Rect sunday = FindTextBounds(page, "SUNDAY");
             Assert(Math.Abs(legacy.Left - monday.Left) < 2, "Legacy column zero maps to Monday.");
             Assert(sunday.Left > A4.Width * 0.8, "Column seven stays in Sunday's final column.");
+        }
+
+        private static void WeekdayVectorOutlines()
+        {
+            BoardPage page = Build(new BoardState(), new Rect(new Point(), A4));
+            Assert(page.PageSize == A4, "Page retains its physical paper size.");
+            Assert(!Leaves(page.Drawing).Any(item => item is GlyphRunDrawing || item is ImageDrawing),
+                "Printed text is font-independent vector outlines without raster images or glyph resources.");
+            var shapes = new HashSet<string>();
+            foreach (string weekday in new[] { "周一", "周二", "周三", "周四", "周五", "周六", "周日" })
+            {
+                PageTextRun run = page.TextRuns.Single(item => item.Text == weekday);
+                Assert(!run.Bounds.IsEmpty && run.Bounds.Width > 10 && run.Bounds.Height > 7 && run.Geometry.GetArea() > 0,
+                    weekday + " has visible CJK outline geometry.");
+                Assert(Leaves(page.Drawing).OfType<GeometryDrawing>().Any(item => item.Geometry == run.Geometry),
+                    weekday + " metadata identifies geometry that is actually drawn.");
+                Assert(run.Geometry.IsFrozen, "Printed weekday geometry is immutable.");
+                shapes.Add(run.Geometry.GetFlattenedPathGeometry().ToString(CultureInfo.InvariantCulture));
+            }
+            Assert(shapes.Count == 7, "All seven weekdays have distinct outlines rather than missing-glyph boxes.");
         }
 
         private static void SelectedWeekMetadata()
@@ -101,8 +122,8 @@ namespace TaskBoard.Tests
                 WeekStart = "2026-10-12",
                 Tasks = new List<TaskItem> { new TaskItem { Column = 7, Text = "OTHER_WEEK_MARKER" } }
             });
-            DrawingVisual page = Build(state, new Rect(new Point(), A4));
-            string text = ReadText(page.Drawing);
+            BoardPage page = Build(state, new Rect(new Point(), A4));
+            string text = ReadText(page);
             Assert(text.Contains("2026 / W53"), "Printed week reflects the selected Monday across the year boundary.");
             Assert(text.Contains("月余 54.8%") && text.Contains("年余 21.4%"),
                 "Remaining month and year percentages still reflect the supplied current date.");
@@ -118,7 +139,7 @@ namespace TaskBoard.Tests
             for (int column = 1; column <= 7; column++)
                 state.Tasks.Add(new TaskItem { Column = column, Text = "Margin " + column + " 边界", Color = "#2562A0" });
             var printable = new Rect(76, 65, A4.Width - 152, A4.Height - 130);
-            DrawingVisual page = Build(state, printable);
+            BoardPage page = Build(state, printable);
             foreach (var item in PositionedLeaves(page.Drawing, Matrix.Identity))
             {
                 Drawing leaf = item.Item1;
@@ -134,11 +155,11 @@ namespace TaskBoard.Tests
             state.Tasks.Add(new TaskItem { Column = 1, Text = "MON_LAST", DailyGroupId = "routine" });
             state.Tasks.Add(new TaskItem { Column = 7, Text = "SUN_FIRST", IsCompleted = true });
             state.Tasks.Add(new TaskItem { Column = 7, Text = "SUN_LAST" });
-            DrawingVisual page = Build(state, new Rect(new Point(), A4));
-            string text = ReadText(page.Drawing);
+            BoardPage page = Build(state, new Rect(new Point(), A4));
+            string text = ReadText(page);
             Assert(text.Contains("1. MON_FIRST") && text.Contains("2. MON_LAST"), "Monday numbering follows its visible task order.");
             Assert(text.Contains("1. SUN_FIRST") && text.Contains("2. SUN_LAST"), "Sunday numbering resets to one.");
-            Assert(FindGlyphBounds(page.Drawing, "MON_FIRST").Top < FindGlyphBounds(page.Drawing, "MON_LAST").Top,
+            Assert(FindTextBounds(page, "MON_FIRST").Top < FindTextBounds(page, "MON_LAST").Top,
                 "Printed first and last task positions agree with their numbers.");
             Assert(state.Tasks[0].Text == "MON_FIRST" && state.Tasks[1].Text == "MON_LAST",
                 "Print numbering leaves stored task text unchanged.");
@@ -163,8 +184,8 @@ namespace TaskBoard.Tests
                 Color = "#20704A"
             });
             var printable = new Rect(new Point(), A4);
-            DrawingVisual page = Build(state, printable);
-            string text = ReadText(page.Drawing);
+            BoardPage page = Build(state, printable);
+            string text = ReadText(page);
             for (int index = 0; index < 120; index++)
                 Assert(text.Contains("DENSE_" + index.ToString("000", CultureInfo.InvariantCulture)),
                     "Dense task " + index + " is present.");
@@ -175,8 +196,8 @@ namespace TaskBoard.Tests
                 Drawing leaf = item.Item1;
                 if (IsPaper(leaf)) continue;
                 Assert(Inside(item.Item2, printable), "Dense page ink stays on the single sheet.");
-                var glyph = leaf as GlyphRunDrawing;
-                var brush = glyph == null ? null : glyph.ForegroundBrush as SolidColorBrush;
+                var outline = leaf as GeometryDrawing;
+                var brush = outline == null ? null : outline.Brush as SolidColorBrush;
                 if (brush != null && brush.Color == Color.FromRgb(198, 28, 34)) redFound = true;
             }
             Assert(redFound, "Final dense task retains its individual font color.");
@@ -187,25 +208,64 @@ namespace TaskBoard.Tests
             var state = new BoardState();
             for (int column = 1; column <= 7; column++)
             {
-                int normalCount = column == 7 ? 18 : 1;
+                int normalCount = column == 7 ? 22 : 1;
                 for (int index = 1; index <= normalCount; index++)
                     state.Tasks.Add(new TaskItem { Column = column, Text = "NORMAL_" + column + "_" + index });
                 state.Tasks.Add(new TaskItem { Column = column, Text = "ROUTINE" + column, DailyGroupId = "routine" });
             }
-            DrawingVisual page = Build(state, new Rect(new Point(), A4));
-            string text = ReadText(page.Drawing);
-            GeometryDrawing[] boxes = Leaves(page.Drawing).OfType<GeometryDrawing>()
-                .Where(item => item.Geometry is RectangleGeometry && PenColor(item.Pen, "#DDDDDD")).ToArray();
+            BoardPage page = Build(state, new Rect(new Point(), A4));
+            string text = ReadText(page);
+            GeometryDrawing[] boxes = TaskBoxes(page).ToArray();
             Assert(boxes.Length == state.Tasks.Count, "Only task boxes are drawn on the page.");
             Assert(boxes.All(item => Near(((RectangleGeometry)item.Geometry).RadiusX, 0)), "Task boxes retain square corners.");
             Assert(boxes.All(item => Near(item.Geometry.Bounds.Width, boxes[0].Geometry.Bounds.Width)),
                 "Task boxes keep equal full-column widths.");
-            Assert(text.Contains("19. ROUTINE7"), "Sunday's final routine and its number remain visible.");
-            Rect finalTask = FindGlyphBounds(page.Drawing, "ROUTINE7");
+            GeometryDrawing board = Leaves(page.Drawing).OfType<GeometryDrawing>()
+                .Single(item => item.Geometry is RectangleGeometry && PenColor(item.Pen, "#000000"));
+            double columnWidth = board.Geometry.Bounds.Width / 7;
+            Assert(boxes.All(item => Near(item.Geometry.Bounds.Width, columnWidth)),
+                "Task fills reach both column edges without horizontal inset.");
+            foreach (var column in boxes.GroupBy(item => Math.Round(item.Geometry.Bounds.Left, 3)))
+            {
+                var ordered = column.OrderBy(item => item.Geometry.Bounds.Top).ToArray();
+                Assert(Near(ordered[0].Geometry.Bounds.Top, board.Geometry.Bounds.Top + 48),
+                    "The first task begins directly below the weekday header.");
+                for (int index = 1; index < ordered.Length; index++)
+                    Assert(Near(ordered[index - 1].Geometry.Bounds.Bottom, ordered[index].Geometry.Bounds.Top),
+                        "Consecutive task fills meet without vertical gaps.");
+            }
+            Assert(text.Contains("23. ROUTINE7"), "Sunday's final routine and its number remain visible.");
+            Rect finalTask = FindTextBounds(page, "ROUTINE7");
             Assert(finalTask.Bottom > A4.Height * 0.85 && finalTask.Bottom < A4.Height - 25,
                 "Tasks use the full column height without clipping the final task.");
             foreach (var item in PositionedLeaves(page.Drawing, Matrix.Identity))
                 Assert(Inside(item.Item2, new Rect(new Point(), A4)), "Task-only page ink remains inside its A4 sheet.");
+        }
+
+        private static void TaskBackgrounds()
+        {
+            var state = new BoardState();
+            state.Tasks.Add(new TaskItem { Column = 1, Text = "彩色背景 English", BackgroundColor = "#FFF2CC", Color = "#315FA3" });
+            state.Tasks.Add(new TaskItem { Column = 1, Text = "无背景", BackgroundColor = null });
+            state.Tasks.Add(new TaskItem { Column = 7, Text = "独立背景", BackgroundColor = "#DDEBF7", IsCompleted = true });
+            state.Tasks.Add(new TaskItem { Column = 7, Text = "Invalid fallback", BackgroundColor = "invalid" });
+            BoardPage page = Build(state, new Rect(new Point(), A4));
+            GeometryDrawing[] boxes = TaskBoxes(page).ToArray();
+            Assert(boxes.Length == 4, "Each task has its own full-block background.");
+            Assert(BrushColor(boxes[0].Brush, "#FFF2CC") && BrushColor(boxes[2].Brush, "#DDEBF7"),
+                "Independent task background colors are preserved in vector output.");
+            Assert(BrushColor(boxes[1].Brush, "#FFFFFF") && BrushColor(boxes[3].Brush, "#FFFFFF"),
+                "Unset and malformed background colors safely use white.");
+            foreach (GeometryDrawing box in boxes)
+            {
+                Assert(box.Geometry.Bounds.Width > 140 && box.Geometry.Bounds.Height > 20,
+                    "Background fills cover whole task rectangles, not text glyphs.");
+                Assert(Inside(box.Geometry.Bounds, new Rect(new Point(), A4)), "Colored task fill stays on paper.");
+            }
+            Assert(BrushColor(page.TextRuns.Single(run => run.Text.Contains("彩色背景")).Brush, "#315FA3"),
+                "Background selection leaves independent foreground color intact.");
+            Assert(state.Tasks[0].BackgroundColor == "#FFF2CC" && state.Tasks[1].BackgroundColor == null,
+                "Rendering does not rewrite persisted background selections.");
         }
         private static void CompletedTaskMarkers()
         {
@@ -213,7 +273,7 @@ namespace TaskBoard.Tests
             state.Tasks.Add(new TaskItem { Column = 1, Text = "COMPLETED_TEXT", IsCompleted = true });
             state.Tasks.Add(new TaskItem { Column = 1, Text = "PENDING" });
             state.Tasks.Add(new TaskItem { Column = 7, Text = "COMPLETE_7", IsCompleted = true });
-            DrawingVisual page = Build(state, new Rect(new Point(), A4));
+            BoardPage page = Build(state, new Rect(new Point(), A4));
             GeometryDrawing[] markers = Leaves(page.Drawing).OfType<GeometryDrawing>()
                 .Where(item => item.Geometry is RectangleGeometry && BrushColor(item.Brush, "#002FA7")).ToArray();
             Assert(markers.Length == 2, "Only completed tasks receive a blue marker.");
@@ -223,9 +283,9 @@ namespace TaskBoard.Tests
                 Assert(Near(bounds.Width, bounds.Height) && bounds.Width > 0 && bounds.Width < 8,
                     "Completion marker is a tiny filled square.");
             }
-            Rect text = FindGlyphBounds(page.Drawing, "COMPLETED_TEXT");
+            Rect text = FindTextBounds(page, "COMPLETED_TEXT");
             Assert(markers[0].Geometry.Bounds.Left > text.Right, "Reserved right space keeps completion marker clear of task text.");
-            Assert(ReadText(page.Drawing).Contains("COMPLETED_TEXT"), "Completed task text stays intact.");
+            Assert(ReadText(page).Contains("COMPLETED_TEXT"), "Completed task text stays intact.");
             Assert(!Leaves(page.Drawing).OfType<GeometryDrawing>().Any(item =>
             {
                 var line = item.Geometry as LineGeometry;
@@ -247,11 +307,12 @@ namespace TaskBoard.Tests
             var state = new BoardState();
             for (int column = 1; column <= 7; column++)
             {
-                state.Tasks.Add(new TaskItem { Column = column, Text = examples[column - 1], Color = colors[column - 1], IsCompleted = column == 1 });
+                state.Tasks.Add(new TaskItem { Column = column, Text = examples[column - 1], Color = colors[column - 1], IsCompleted = column == 1,
+                    BackgroundColor = column == 1 ? "#FFF2CC" : column == 4 ? "#E2F0D9" : null });
                 state.Tasks.Add(new TaskItem { Column = column, Text = "Review " + column + "\n复核与调整", Color = "#202020" });
                 state.Tasks.Add(new TaskItem { Column = column, Text = "阅读 · Read", Color = "#426787", DailyGroupId = "read" });
             }
-            DrawingVisual page = Build(state, new Rect(new Point(), A4));
+            BoardPage page = Build(state, new Rect(new Point(), A4));
             const double dpi = 144;
             var bitmap = new RenderTargetBitmap((int)Math.Ceiling(A4.Width * dpi / 96),
                 (int)Math.Ceiling(A4.Height * dpi / 96), dpi, dpi, PixelFormats.Pbgra32);
@@ -262,41 +323,28 @@ namespace TaskBoard.Tests
             using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write)) encoder.Save(stream);
         }
 
-        private static DrawingVisual Build(BoardState state, Rect printable)
+        private static BoardPage Build(BoardState state, Rect printable)
         {
             return BoardPageRenderer.BuildPage(state, A4, printable, TestDate);
         }
 
-        private static string ReadText(Drawing drawing)
+        private static string ReadText(BoardPage page)
         {
-            var text = new StringBuilder();
-            foreach (Drawing leaf in Leaves(drawing))
-            {
-                var glyph = leaf as GlyphRunDrawing;
-                if (glyph != null && glyph.GlyphRun.Characters != null)
-                    foreach (char character in glyph.GlyphRun.Characters) text.Append(character);
-            }
-            return text.ToString();
+            return string.Concat(page.TextRuns.Select(run => run.Text));
         }
 
-        private static Rect FindGlyphBounds(Drawing drawing, string value)
+        private static Rect FindTextBounds(BoardPage page, string value)
         {
-            var text = new StringBuilder();
-            var spans = new List<Tuple<int, int, Rect>>();
-            foreach (var item in PositionedLeaves(drawing, Matrix.Identity))
-            {
-                var glyph = item.Item1 as GlyphRunDrawing;
-                if (glyph == null || glyph.GlyphRun.Characters == null) continue;
-                string part = new string(glyph.GlyphRun.Characters.ToArray());
-                spans.Add(Tuple.Create(text.Length, part.Length, item.Item2));
-                text.Append(part);
-            }
-            int start = text.ToString().IndexOf(value, StringComparison.Ordinal);
-            if (start < 0) throw new InvalidOperationException("Missing printed text: " + value);
-            Rect bounds = Rect.Empty;
-            foreach (var span in spans)
-                if (span.Item1 < start + value.Length && span.Item1 + span.Item2 > start) bounds.Union(span.Item3);
-            return bounds;
+            PageTextRun match = page.TextRuns.FirstOrDefault(run => run.Text.Contains(value));
+            if (match == null) throw new InvalidOperationException("Missing printed text: " + value);
+            return match.Bounds;
+        }
+
+        private static IEnumerable<GeometryDrawing> TaskBoxes(BoardPage page)
+        {
+            return Leaves(page.Drawing).OfType<GeometryDrawing>().Where(item =>
+                item.Geometry is RectangleGeometry && item.Pen == null &&
+                item.Geometry.Bounds.Width > 30 && !IsPaper(item));
         }
 
         private static IEnumerable<Drawing> Leaves(Drawing drawing)
@@ -327,7 +375,8 @@ namespace TaskBoard.Tests
         {
             var geometry = drawing as GeometryDrawing;
             var brush = geometry == null ? null : geometry.Brush as SolidColorBrush;
-            return geometry != null && geometry.Pen == null && brush != null && brush.Color == Colors.White;
+            return geometry != null && geometry.Pen == null && brush != null && brush.Color == Colors.White &&
+                Near(geometry.Geometry.Bounds.Width, A4.Width) && Near(geometry.Geometry.Bounds.Height, A4.Height);
         }
 
         private static bool PenColor(Pen pen, string value)

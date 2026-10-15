@@ -13,25 +13,29 @@ namespace TaskBoard.Rendering
         private const double UnitsPerMillimetre = 96.0 / 25.4;
         private const double RequestedMargin = 8.0 * UnitsPerMillimetre;
         private const double PreferredFontSize = 14.0;
-        private const double BoxInset = 0.7;
         private static readonly string[] Headers = { "周一", "周二", "周三", "周四", "周五", "周六", "周日" };
         private static readonly Brush CompletedBrush = MakeBrush("#002FA7");
         private static readonly Pen BoxOutline = MakePen("#DDDDDD", 0.6);
 
         /// <summary>Creates an A4 landscape page without opening a printer dialog.</summary>
-        public static DrawingVisual BuildPage(BoardState state)
+        public static BoardPage BuildPage(BoardState state)
+        {
+            return BuildPage(state, DateTime.Now);
+        }
+
+        public static BoardPage BuildPage(BoardState state, DateTime localNow)
         {
             var size = new Size(297 * UnitsPerMillimetre, 210 * UnitsPerMillimetre);
-            return BuildPage(state, size, new Rect(new Point(), size));
+            return BuildPage(state, size, new Rect(new Point(), size), localNow);
         }
 
         /// <summary>Uses physical paper coordinates and the printer's actual imageable rectangle.</summary>
-        public static DrawingVisual BuildPage(BoardState state, Size pageSize, Rect printableArea)
+        public static BoardPage BuildPage(BoardState state, Size pageSize, Rect printableArea)
         {
             return BuildPage(state, pageSize, printableArea, DateTime.Now);
         }
 
-        public static DrawingVisual BuildPage(BoardState state, Size pageSize, Rect printableArea, DateTime localNow)
+        public static BoardPage BuildPage(BoardState state, Size pageSize, Rect printableArea, DateTime localNow)
         {
             if (state == null) throw new ArgumentNullException("state");
             if (!IsPositiveFinite(pageSize.Width) || !IsPositiveFinite(pageSize.Height))
@@ -62,51 +66,61 @@ namespace TaskBoard.Rendering
             double fontSize = FindFontSize(columns, columnWidth, board.Height - headerHeight);
             double padding = HorizontalPadding(fontSize);
 
-            var visual = new DrawingVisual();
+            var visual = new BoardPage(pageSize);
             using (DrawingContext drawing = visual.RenderOpen())
             {
                 drawing.DrawRectangle(Brushes.White, null, paper);
-                DrawMetrics(drawing, content, state, localNow);
+                DrawMetrics(drawing, visual, content, state, localNow);
                 var border = new Pen(Brushes.Black, 1.1);
                 border.Freeze();
-                drawing.DrawRectangle(null, border, board);
                 double dividerY = board.Top + headerHeight;
-                drawing.DrawLine(border, new Point(board.Left, dividerY), new Point(board.Right, dividerY));
 
                 for (int column = 0; column < Headers.Length; column++)
                 {
                     double x = board.Left + column * columnWidth;
-                    if (column > 0)
-                        drawing.DrawLine(border, new Point(x, board.Top), new Point(x, board.Bottom));
                     var header = CreateText(Headers[column], 12, Brushes.Black, columnWidth - 8);
-                    drawing.DrawText(header, new Point(x + (columnWidth - header.Width) / 2,
-                        board.Top + (headerHeight - header.Height) / 2));
+                    DrawTextOutline(drawing, visual, Headers[column], header, Brushes.Black,
+                        new Point(x + (columnWidth - header.Width) / 2,
+                            board.Top + (headerHeight - header.Height) / 2));
 
-                    double y = dividerY + fontSize * 0.4;
+                    double y = dividerY;
                     for (int taskIndex = 0; taskIndex < columns[column].Count; taskIndex++)
                     {
                         TaskItem task = columns[column][taskIndex];
-                        var text = CreateText(TaskLabel(task, taskIndex + 1), fontSize, GetBrush(task.Color),
+                        string label = TaskLabel(task, taskIndex + 1);
+                        Brush foreground = GetBrush(task.Color, Brushes.Black);
+                        var text = CreateText(label, fontSize, foreground,
                             TaskTextWidth(task, columnWidth, fontSize));
                         double boxHeight = text.Height + fontSize * 0.92;
-                        drawing.DrawRectangle(null, BoxOutline,
-                            new Rect(x + BoxInset, y, columnWidth - 2 * BoxInset, boxHeight));
-                        drawing.DrawText(text, new Point(x + BoxInset + padding, y + fontSize * 0.46));
+                        drawing.DrawRectangle(GetBrush(task.BackgroundColor, Brushes.White), null,
+                            new Rect(x, y, columnWidth, boxHeight));
+                        drawing.DrawLine(BoxOutline, new Point(x, y + boxHeight),
+                            new Point(x + columnWidth, y + boxHeight));
+                        DrawTextOutline(drawing, visual, label, text, foreground,
+                            new Point(x + padding, y + fontSize * 0.46));
                         if (task.IsCompleted)
                         {
                             double side = fontSize * 0.43;
                             drawing.DrawRectangle(CompletedBrush, null, new Rect(
-                                x + columnWidth - BoxInset - padding - side,
+                                x + columnWidth - padding - side,
                                 y + (boxHeight - side) / 2, side, side));
                         }
-                        y += boxHeight + fontSize * 0.28;
+                        y += boxHeight;
                     }
+                }
+                // Draw the grid last so a full-width task fill cannot obscure a column edge.
+                drawing.DrawRectangle(null, border, board);
+                drawing.DrawLine(border, new Point(board.Left, dividerY), new Point(board.Right, dividerY));
+                for (int column = 1; column < Headers.Length; column++)
+                {
+                    double x = board.Left + column * columnWidth;
+                    drawing.DrawLine(border, new Point(x, board.Top), new Point(x, board.Bottom));
                 }
             }
             return visual;
         }
 
-        private static void DrawMetrics(DrawingContext drawing, Rect content, BoardState state, DateTime localNow)
+        private static void DrawMetrics(DrawingContext drawing, BoardPage visual, Rect content, BoardState state, DateTime localNow)
         {
             DateMetrics metrics = DateMetrics.From(localNow);
             DateTime selectedWeek;
@@ -122,8 +136,21 @@ namespace TaskBoard.Rendering
             // Font advance widths can be slightly narrower than the final glyph's ink.
             Rect leftInk = left.BuildGeometry(new Point()).Bounds;
             Rect rightInk = right.BuildGeometry(new Point()).Bounds;
-            drawing.DrawText(left, new Point(content.Left + 2 - Math.Min(0, leftInk.Left), content.Top));
-            drawing.DrawText(right, new Point(content.Right - 2 - Math.Max(right.Width, rightInk.Right), content.Top));
+            DrawTextOutline(drawing, visual, week, left, Brushes.Black,
+                new Point(content.Left + 2 - Math.Min(0, leftInk.Left), content.Top));
+            DrawTextOutline(drawing, visual, remaining, right, Brushes.Black,
+                new Point(content.Right - 2 - Math.Max(right.Width, rightInk.Right), content.Top));
+        }
+
+        private static void DrawTextOutline(DrawingContext drawing, BoardPage visual, string value,
+            FormattedText text, Brush brush, Point origin)
+        {
+            // Resolve the composite font here, before the page enters XPS or a printer driver.
+            // Only paths are serialized; no runtime-only composite font needs to be embedded.
+            Geometry geometry = text.BuildGeometry(origin);
+            geometry.Freeze();
+            drawing.DrawGeometry(brush, null, geometry);
+            visual.AddTextRun(value, geometry, brush);
         }
 
         private static double FindFontSize(List<TaskItem>[] columns, double columnWidth, double availableHeight)
@@ -151,10 +178,9 @@ namespace TaskBoard.Rendering
         {
             foreach (List<TaskItem> tasks in columns)
             {
-                double usedHeight = fontSize * 0.8;
+                double usedHeight = BoxOutline.Thickness;
                 for (int index = 0; index < tasks.Count; index++)
                 {
-                    if (index > 0) usedHeight += fontSize * 0.28;
                     usedHeight += CreateText(TaskLabel(tasks[index], index + 1), fontSize, Brushes.Black,
                         TaskTextWidth(tasks[index], columnWidth, fontSize)).Height + fontSize * 0.92;
                     if (usedHeight > availableHeight) return false;
@@ -168,7 +194,7 @@ namespace TaskBoard.Rendering
 
         private static double TextWidth(double columnWidth, double fontSize)
         {
-            return Math.Max(1, columnWidth - 2 * BoxInset - 2 * HorizontalPadding(fontSize));
+            return Math.Max(1, columnWidth - 2 * HorizontalPadding(fontSize));
         }
 
         private static double TaskTextWidth(TaskItem task, double columnWidth, double fontSize)
@@ -207,7 +233,7 @@ namespace TaskBoard.Rendering
             return text;
         }
 
-        private static Brush GetBrush(string value)
+        private static Brush GetBrush(string value, Brush fallback)
         {
             try
             {
@@ -217,7 +243,7 @@ namespace TaskBoard.Rendering
             }
             catch (Exception)
             {
-                return Brushes.Black;
+                return fallback;
             }
         }
 

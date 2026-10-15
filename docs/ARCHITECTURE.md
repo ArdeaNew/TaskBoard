@@ -8,20 +8,22 @@ TaskBoard 是原生 WPF 桌面应用，目标为 .NET Framework 4.8。运行版�
 | --- | --- |
 | `src/TaskBoard/Program.cs` | STA 入口、数据目录、同一数据目录的单实例互斥、WPF 应用生命周期。 |
 | `Core/TaskItem.cs`、`BoardState.cs`、`WeekPlan.cs` | 当前周任务、日常任务分组、独立完成状态及按周归档。 |
-| `Core/BoardOperations.cs` | 每日复制、文字与颜色同步、排序、按天清空和任务快照。 |
+| `Core/BoardOperations.cs`、`TaskColors.cs` | 每日复制、文字与文字色同步、独立背景、颜色校验、排序、按天清空和任务快照。 |
 | `Core/WeeklyPlanner.cs` | 周一日期键、周切换、旧数据迁移、新周日常任务生成及完整保存快照。 |
 | `Persistence/BoardStore.cs`、`CompatibilityData.cs` | JSON 规范化、原子保存、备份恢复及不透明旧字段兼容。 |
 | `Core/DateMetrics.cs` | 使用系统本地日期计算 ISO 周数、含今天的月余和年余百分比。 |
 | `UI/MainWindow.cs` | 七列布局、周导航、命令、编辑协调、撤销和延迟保存。 |
 | `UI/TaskDragController.cs` | 指针、捕获、拖拽预览、列排序和动画生命周期；通过回调提交结果。 |
-| `UI/TaskCard.cs` | 任务编辑、输入法、独立文字颜色、编号及完成状态。 |
+| `UI/TaskCard.cs` | 任务编辑、输入法、文字及区块背景色、编号及完成状态。 |
+| `UI/ColorPalette.cs`、`MinimalButton.cs` | 复用预设与自定义颜色交互、清除背景及极简按钮样式。 |
 | `UI/DayClearButton.cs` | 固定底部区域、指针停留计时与按钮淡入淡出，隐藏时阻止激活。 |
 | `UI/ColumnPanel.cs`、`VisualTree.cs` | 布局位置过渡和共享控件祖先查询。 |
-| `Rendering/BoardPageRenderer.cs`、`Typography.cs` | 无对话框及文件访问的共享矢量排版与字体映射。 |
-| `UI/BoardPrinter.cs` | 系统打印对话框、纸张大小与打印机硬边距适配。 |
+| `Rendering/BoardPageRenderer.cs`、`BoardPage.cs`、`Typography.cs` | 无对话框及文件访问的共享矢量排版、页面尺寸、文字轮廓及字体映射。 |
+| `UI/PrintPreviewWindow.cs`、`PageVisual.cs` | 整页预览、缩放及适合页面；直接显示共享矢量页面。 |
+| `UI/BoardPrinter.cs`、`BoardPrintDocument.cs` | 打印机和票据适配、硬边距、固定文档及原生打印提交。 |
 | `UI/BoardImageExporter.cs` | 本机保存对话框、192 DPI PNG 编码与原子输出。 |
 
-任务的 `Column` 为 1–7，对应周一至周日；旧版 Column 0 迁移到周一。当天按已完成、未完成普通任务、未完成日常任务排列。序号按当前显示顺序生成，不写入任务文字。`DailyGroupId` 关联日常任务的文字与颜色，各天完成状态独立。
+任务的 `Column` 为 1–7，对应周一至周日；旧版 Column 0 迁移到周一。当天按已完成、未完成普通任务、未完成日常任务排列。序号按当前显示顺序生成，不写入任务文字。`DailyGroupId` 关联日常任务的文字与文字色，各天完成状态及背景色独立。可选的 `BackgroundColor` 使用规范化的 `#RRGGBB`，缺失、null 或无效值均表示不填充；旧版数据无需迁移。
 
 ## 周导航与归档
 
@@ -29,7 +31,7 @@ TaskBoard 是原生 WPF 桌面应用，目标为 .NET Framework 4.8。运行版�
 
 启动先显示系统本周。顶部提供上一周、下一周、日历选择和回到本周；日历中的任意日期均归入其所在周。离开当前周前提交编辑并保存，保存失败则保持原周；切换后清空当前撤销栈和列滚动位置。正在查看本周时，系统跨周会进入新周；浏览其他周时保留所选周。
 
-已保存的周恢复原任务和完成状态。首次打开当前周或未来周时，从日期最接近的更早已知周提取日常任务，为七天生成新任务并重置完成状态；普通任务不复制。尚无归档的过去周为空。日常任务的文字和颜色仅在当前周七天同步，其他周保留各自内容。旧版没有周归档的任务迁入升级时的本周。
+已保存的周恢复原任务和完成状态。首次打开当前周或未来周时，从日期最接近的更早已知周提取日常任务，为七天生成新任务并重置完成状态；普通任务不复制。背景继承对应星期的日常副本，缺少该星期时使用模板背景。尚无归档的过去周为空。日常任务的文字和文字色仅在当前周七天同步，其他周保留各自内容。旧版没有周归档的任务迁入升级时的本周。
 
 旧版本的记录和窗口尺寸字段作为不透明兼容数据保留，加载与保存时保留其值，不再参与界面或业务逻辑；不再创建旧记录默认值。`IExtensibleDataObject` 传递扩展数据，持久化层额外保留未知 JSON 成员树，以规避 Framework 序列化器对空字符串及特殊键名的处理问题。JSON 格式和成员顺序可能变化。
 
@@ -54,7 +56,9 @@ TaskBoard 是原生 WPF 桌面应用，目标为 .NET Framework 4.8。运行版�
 
 ## 打印与导出
 
-打印仅从当前所选周的 `Tasks` 重新排版，包含屏幕滚动范围外的全部任务，不遍历其他周。默认 A4 横向、约 8 mm 边距，并尊重打印机硬边距。字号测量包含任务序号、任务框和完成标记预留空间，需要时缩小以保持单页完整。任务可使用整个列高度，底部没有记录区域。
+打印前提交编辑并保存，读取所选周快照，首先打开可缩放的整页预览。打印仅排版所选周的 `Tasks`，包含滚动范围外的全部任务，不遍历其他周。默认 A4 横向、约 8 mm 边距，按打印机能力校验高质量票据，并尊重所选纸张与硬边距。字号测量包含任务序号、任务框和完成标记预留空间，需要时缩小以保持单页完整。任务使用整列宽背景和连续区块，底部没有记录区域。
+
+`BoardPage` 保存纸张尺寸及冻结的文字轮廓，所有文字通过 `FormattedText.BuildGeometry` 绘制，避免打印机端中文字体缺失或替换。`PageVisual` 仅缩放显示同一份矢量绘图；`BoardPrintDocument` 将其放入实际纸张尺寸的单页 `FixedDocument`，由 `PrintDocument` 提交，不把预览截成位图。更换打印设置后重新按设备尺寸排版，并同时更新预览。打印流水线测试将固定文档写为 XPS 后重新读取，检查全部星期、文字轮廓和背景色。
 
 PNG 导出复用同一矢量页面，以 192 DPI 输出到用户选择的位置；先写同目录临时文件，再替换目标文件。导出结果包含所选周完整七天、任务编号和蓝色完成方块。页眉的周数及默认 PNG 文件名对应所选周；月余和年余百分比始终对应系统当前日期，不随浏览的周改变。
 
@@ -68,6 +72,6 @@ PNG 导出复用同一矢量页面，以 192 DPI 输出到用户选择的位置�
 
 开发机预先安装 .NET SDK（仅用于 Roslyn 编译器）和 .NET Framework 4.8 Developer Pack。`build.ps1 -Test` 使用本机引用程序集编译并运行检查，不执行包恢复。
 
-`package.ps1` 在本地生成 `dist/TaskBoard-1.2.1-portable.zip`、`dist/TaskBoard-1.2.1-source.zip` 和 `dist/SHA256SUMS.txt`。便携包包含程序、配置和 `README.txt`；源码包用于代码托管，不包含个人数据、预览测试数据或构建缓存。打包不创建安装器，也不上传 GitHub。
+`package.ps1` 在本地生成 `dist/TaskBoard-1.3.0-portable.zip`、`dist/TaskBoard-1.3.0-source.zip` 和 `dist/SHA256SUMS.txt`。便携包包含程序、配置、`README.txt` 和 `LICENSE`；源码包用于代码托管，不包含个人数据、预览测试数据或构建缓存。打包不创建安装器，也不上传 GitHub。
 
-源码附带可选的 GitHub Actions 构建配置。只有用户日后将代码托管到 GitHub 并触发工作流时，CI 才会准备 SDK 并保存构建附件；工作流没有 GitHub Release 发布步骤。本地构建和打包不会触发该工作流。
+源码附带 GitHub Actions 构建配置，推送、拉取请求或手动触发时准备 SDK、运行四组检查并保存构建附件；工作流没有 GitHub Release 发布步骤。本地构建和打包不会触发该工作流。

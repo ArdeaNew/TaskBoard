@@ -9,12 +9,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Test
 ```
 
 - 核心检查通过：ISO 周数和日期边界、旧数据迁移、各周独立保存、周切换、日常模板生成与完成重置、任务排序、原子保存及损坏恢复。
-- 打印检查通过：七等宽列、按天编号、字体与颜色、完整任务框、蓝色完成标记、硬边距及密集任务无截断；所选周页眉正确，其他周和旧记录数据不显示。
+- 页面检查通过：七等宽列、按天编号、文字色与整块背景、蓝色完成标记、硬边距及密集任务无截断；所选周页眉正确，其他周和旧记录数据不显示。
+- 打印流水线检查通过：单页固定文档写为 XPS 再读取，七个星期标题与任务文字轮廓完整，无字体或位图依赖，背景保持；预览与文档使用同一矢量页面。
 - 控件集成检查通过：上一周、下一周、日历和回到本周；编辑后切换、跨周撤销隔离、每日复制、完成置顶、未提交空白项不写盘、保存恢复及 PNG 编码。
 - 检查跨列拖拽的预览与最终任务样式、换行和序号一致；取消拖拽和切周后无遗留浮层。
+- 检查背景预设、自定义色值及清除，编辑取消、撤销、自动保存和每日日常副本背景独立；拖拽过程保留整块填色。
 - 检查七个底部清空区域等宽且初始隐藏，悬停显示、移出隐藏；确认框显示所选周具体日期，默认不清空，确认只影响该天，并可撤销。
 - 以不同于系统本周的日期导出，确认页眉及默认文件名使用所选周，月余和年余仍按当前日期计算。
-- 检查 `artifacts/tests/board-preview.png`、`artifacts/tests/print-preview.png` 和 `artifacts/tests/exported-board.png`；预览不是发布版自带示例数据。
+- 检查 `artifacts/tests/board-preview.png`、`artifacts/tests/print-preview.png`、`artifacts/tests/exported-board.png` 及 `artifacts/tests/print-xps-preview.png`；预览不是发布版自带示例数据。
 - 最终版本、构建大小及实际检查结果记录在 `VALIDATION.md`，不沿用旧版数量或旧窗口行为。
 
 自动测试通过不代表已测试每种输入法、显示器或物理打印机。原生 IME 选词、滚动长列拖拽、跨列放置、Esc 取消，以及实际纸张输出需按本次发布的实际验证情况记录；未执行的检查明确保留为未验证。
@@ -25,20 +27,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Test
 powershell -NoProfile -ExecutionPolicy Bypass -File .\package.ps1
 ```
 
-- `dist/TaskBoard-1.2.1-portable.zip`：只放运行所需的 `TaskBoard.exe`、`TaskBoard.exe.config`、`README.txt` 和 `LICENSE`。
-- `dist/TaskBoard-1.2.1-source.zip`：包含源代码、构建和打包脚本、图标资源、测试及说明；排除 `artifacts`、`qa-data`、`dist`、`.git`、缓存和本地用户数据。
+- `dist/TaskBoard-1.3.0-portable.zip`：只放运行所需的 `TaskBoard.exe`、`TaskBoard.exe.config`、`README.txt` 和 `LICENSE`。
+- `dist/TaskBoard-1.3.0-source.zip`：包含源代码、构建和打包脚本、图标资源、测试及说明；排除 `artifacts`、`qa-data`、`dist`、`.git`、缓存和本地用户数据。
 - `dist/SHA256SUMS.txt`：列出两个 ZIP 的 SHA-256；以 `Get-FileHash -Algorithm SHA256` 本地复核。
 - 程序图标嵌入可执行文件；图标源文件随源码包保留。
-- 不执行上传、Git push、远程发布或自动下载；不把测试任务复制到用户默认数据目录。
+- 打包脚本不执行上传、Git push、远程发布或自动下载；不把测试任务复制到用户默认数据目录。
 
 ## 解压后的运行核对
 
 1. 将便携包解压至独立目录，确认程序与配置文件同目录；运行发布版不需要开发工具。
 2. 使用 `TaskBoard.exe --data-dir "隔离测试目录"` 检查全新数据和再次打开，避免写入日常使用的看板。
 3. 确认窗口约为可用屏幕宽高的 70%，七天标题、任务框和序号正常，底部没有记录区。
-4. 编辑中英文和颜色、标记完成、创建日常任务；切换到另一周再返回，确认任务、完成状态及顺序独立保留。
+4. 编辑中英文、文字色和背景色、标记完成、创建日常任务；切换到另一周再返回，确认任务、背景、完成状态及顺序独立保留。
 5. 打开尚无归档的未来周，确认仅继承更早已知周的日常任务，完成状态重置；未保存过的过去周应为空。关闭并重开后检查归档仍存在，默认显示本周。
-6. 导出所选周 PNG 并重新打开，确认包含周日末条任务，不含其他周任务或旧记录数据；检查打印对话框的 A4 横向设置，实际出纸后核对边距和颜色。
+6. 导出所选周 PNG 并重新打开，确认包含周日末条任务、背景色，不含其他周任务或旧记录数据；打开打印预览检查七个星期标题、缩放和适合页面，再检查打印对话框的 A4 横向设置，实际出纸后核对边距、文字和颜色。
 7. 使用含旧 `recordFields` 的隔离数据检查升级：原字段仍保留在文件中，界面、图片和打印均不显示。
 8. 确认 `board.json` 和 `board.backup.json` 只出现在选定数据目录；便携包与源码包中均无该次测试数据。
 

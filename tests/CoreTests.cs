@@ -43,6 +43,10 @@ internal static class CoreTests
         Run("Clearing a day removes only active-day tasks and preserves sibling routines and archives", ClearDayIsolation);
         Run("Unknown legacy data survives normalization, weekly snapshots and repeated saves", LegacyUnknownFieldsRoundTrip);
         Run("Retired empty and null fields remain opaque while fresh boards add no retired defaults", LegacyEmptyUnknownFields);
+        Run("Task backgrounds migrate, validate, roundtrip and clone independently", BackgroundPersistence);
+        Run("Daily application and edits preserve independent task backgrounds", BackgroundDailyIsolation);
+        Run("Future weeks retain weekday backgrounds and draft-safe archive snapshots", BackgroundWeeklyCarry);
+        Run("Legacy tasks differing only in background are not lost during merge", BackgroundLegacyMerge);
         Console.WriteLine(failures == 0 ? "All core checks passed." : failures + " check(s) failed.");
         return failures == 0 ? 0 : 1;
     }
@@ -774,6 +778,129 @@ internal static class CoreTests
             XmlNode node = document.DocumentElement.SelectSingleNode(member);
             return node == null ? null : node.OuterXml;
         }
+    }
+
+    private static void BackgroundPersistence()
+    {
+        InDirectory(delegate(string directory)
+        {
+            const string json = "{\"tasks\":[" +
+                "{\"id\":\"legacy\",\"text\":\"Synthetic legacy\",\"color\":\"#123456\",\"column\":1}," +
+                "{\"id\":\"filled\",\"text\":\"Synthetic fill\",\"color\":\"#123456\",\"column\":2,\"backgroundColor\":\"#a0b1c2\"}," +
+                "{\"id\":\"invalid\",\"text\":\"Invalid fill\",\"column\":3,\"backgroundColor\":\"#GG1234\"}," +
+                "{\"id\":\"white\",\"text\":\"Explicit white\",\"column\":4,\"backgroundColor\":\"#ffffff\"}," +
+                "{\"id\":\"alpha\",\"text\":\"Invalid alpha\",\"column\":5,\"backgroundColor\":\"#80112233\"}]}";
+            string path = Path.Combine(directory, "board.json");
+            File.WriteAllText(path, json);
+            var store = new BoardStore(directory);
+            BoardState state = store.Load();
+            Assert(state.Tasks[0].BackgroundColor == null, "missing legacy fill is unfilled");
+            Equal("#A0B1C2", state.Tasks[1].BackgroundColor, "valid fill normalized uppercase");
+            Assert(state.Tasks[2].BackgroundColor == null, "malformed fill normalized unfilled");
+            Equal("#FFFFFF", state.Tasks[3].BackgroundColor, "explicit white preserved separately from unfilled");
+            Assert(state.Tasks[4].BackgroundColor == null, "unsupported alpha normalized unfilled");
+            Assert(!TaskColors.IsValidHex(null) && !TaskColors.IsValidHex("") && !TaskColors.IsValidHex("#FFF"), "missing and short hex rejected");
+            Assert(!TaskColors.IsValidHex("# 12345") && !TaskColors.IsValidHex(" #123456"), "hex whitespace rejected");
+            Equal("#ABCDEF", TaskColors.NormalizeHex("#abcdef"), "shared color normalization");
+            state.Tasks[1].BackgroundColor = "#a0b1c2";
+            List<TaskItem> clones = BoardOperations.CloneTasks(state.Tasks);
+            Equal("#a0b1c2", clones[1].BackgroundColor, "undo clone preserves fill");
+            clones[1].BackgroundColor = "#FFFFFF";
+            Equal("#a0b1c2", state.Tasks[1].BackgroundColor, "clone fill mutation independent");
+            store.Save(state);
+            Equal("#a0b1c2", state.Tasks[1].BackgroundColor, "save normalization leaves source fill untouched");
+            Assert(JsonMember(File.ReadAllText(path), "tasks/item[1]/backgroundColor") == null, "unfilled background omitted from JSON");
+            BoardState loaded = store.Load();
+            Equal("#A0B1C2", loaded.Tasks[1].BackgroundColor, "filled task roundtrip");
+            Assert(loaded.Tasks[0].BackgroundColor == null && loaded.Tasks[2].BackgroundColor == null, "unfilled tasks roundtrip");
+        });
+    }
+
+    private static void BackgroundDailyIsolation()
+    {
+        BoardState state = Sample();
+        TaskItem source = state.Tasks[0];
+        source.BackgroundColor = "#F0E0D0";
+        BoardOperations.ApplyToEveryDay(state, source);
+        Assert(state.Tasks.Where(t => t.IsDaily).All(t => t.BackgroundColor == "#F0E0D0"), "new daily copies inherit source fill");
+        TaskItem tuesday = state.Tasks.Single(t => t.IsDaily && t.Column == 2);
+        TaskItem wednesday = state.Tasks.Single(t => t.IsDaily && t.Column == 3);
+        tuesday.BackgroundColor = "#00AAAA";
+        wednesday.BackgroundColor = null;
+        source.BackgroundColor = "#FF0000";
+        source.Text = "Synthetic routine edit";
+        source.Color = "#ABCDEF";
+        BoardOperations.SyncDailyTask(state, source);
+        Equal("#00AAAA", tuesday.BackgroundColor, "daily sync retains Tuesday fill");
+        Assert(wednesday.BackgroundColor == null, "daily sync retains explicit unfilled peer");
+        Assert(state.Tasks.Where(t => t.IsDaily).All(t => t.Text == source.Text && t.Color == source.Color), "text and font color still sync");
+        BoardOperations.ApplyToEveryDay(state, source);
+        Equal("#00AAAA", tuesday.BackgroundColor, "reapply preserves existing independent fill");
+        Assert(wednesday.BackgroundColor == null, "reapply preserves existing unfilled peer");
+        state.Tasks.Remove(state.Tasks.Single(t => t.IsDaily && t.Column == 5));
+        BoardOperations.ApplyToEveryDay(state, tuesday);
+        Equal("#00AAAA", state.Tasks.Single(t => t.IsDaily && t.Column == 5).BackgroundColor, "recreated copy inherits selected source fill");
+        Equal("#F0E0D0", state.Tasks.Single(t => t.IsDaily && t.Column == 4).BackgroundColor, "other existing copy remains independent");
+        Equal("#FF0000", source.BackgroundColor, "original source retains its independent fill");
+        Assert(state.Tasks.Where(t => !t.IsDaily).All(t => t.BackgroundColor == null), "ordinary task fills unaffected");
+    }
+
+    private static void BackgroundWeeklyCarry()
+    {
+        InDirectory(delegate(string directory)
+        {
+            DateTime today = new DateTime(2026, 10, 15);
+            var state = new BoardState();
+            var source = new TaskItem { Text = "Synthetic weekly routine", Color = "#123456", BackgroundColor = "#E0F0FF", Column = 1, IsCompleted = true };
+            state.Tasks.Add(source);
+            BoardOperations.ApplyToEveryDay(state, source);
+            state.Tasks.Single(t => t.Column == 2).BackgroundColor = null;
+            state.Tasks.Single(t => t.Column == 3).BackgroundColor = "#AAEECC";
+            state.Tasks.Single(t => t.Column == 4).BackgroundColor = "#001122";
+            state.Tasks.Remove(state.Tasks.Single(t => t.Column == 7));
+            WeeklyPlanner.Initialize(state, today);
+            List<TaskItem> history = state.Tasks;
+            WeeklyPlanner.SelectWeek(state, today.AddDays(7), today);
+            Equal(7, state.Tasks.Count, "new week contains seven routine copies");
+            string[] expected = { "#E0F0FF", null, "#AAEECC", "#001122", "#E0F0FF", "#E0F0FF", "#E0F0FF" };
+            for (int day = 1; day <= 7; day++)
+                Equal(expected[day - 1], state.Tasks.Single(t => t.Column == day).BackgroundColor, "matching weekday or source fallback fill");
+            Assert(state.Tasks.All(t => !t.IsCompleted), "fill carry does not carry completion");
+            TaskItem futureWednesday = state.Tasks.Single(t => t.Column == 3);
+            futureWednesday.BackgroundColor = "#ABCDEF";
+            BoardOperations.SyncDailyTask(state, futureWednesday);
+            Equal("#AAEECC", history.Single(t => t.Column == 3).BackgroundColor, "future fill edit does not change history");
+            Assert(state.Tasks.Single(t => t.Column == 2).BackgroundColor == null, "future daily sync does not fill other days");
+            List<TaskItem> committed = BoardOperations.CloneTasks(state.Tasks);
+            state.Tasks.Single(t => t.Column == 2).BackgroundColor = "#112233";
+            BoardState snapshot = WeeklyPlanner.SnapshotForSave(state, committed);
+            Assert(snapshot.Tasks.Single(t => t.Column == 2).BackgroundColor == null, "draft fill excluded from save snapshot");
+            Assert(snapshot.Weeks.Single(w => w.WeekStart == state.ActiveWeekStart).Tasks.Single(t => t.Column == 2).BackgroundColor == null, "draft fill excluded from active archive mirror");
+            Equal("#AAEECC", snapshot.Weeks.Single(w => w.WeekStart == "2026-10-12").Tasks.Single(t => t.Column == 3).BackgroundColor, "history snapshot preserves fill");
+            var store = new BoardStore(directory);
+            store.Save(snapshot);
+            BoardState loaded = store.Load();
+            Equal("#ABCDEF", loaded.Tasks.Single(t => t.Column == 3).BackgroundColor, "active week fill saved");
+            WeeklyPlanner.SelectWeek(loaded, today, today);
+            Equal("#AAEECC", loaded.Tasks.Single(t => t.Column == 3).BackgroundColor, "archive fill saved independently");
+            WeeklyPlanner.SelectWeek(loaded, today.AddDays(7), today);
+            Assert(loaded.Tasks.Single(t => t.Column == 2).BackgroundColor == null, "unfilled weekday saved independently");
+        });
+    }
+
+    private static void BackgroundLegacyMerge()
+    {
+        var first = new TaskItem { Id = "shared", Text = "Synthetic merge", Color = "#123456", Column = 1 };
+        var second = new TaskItem { Id = "shared", Text = "Synthetic merge", Color = "#123456", Column = 1, BackgroundColor = "#AABBCC" };
+        var state = new BoardState
+        {
+            Tasks = new List<TaskItem> { second },
+            Weeks = new List<WeekPlan> { new WeekPlan { WeekStart = "2026-10-12", Tasks = new List<TaskItem> { first } } }
+        };
+        WeeklyPlanner.Initialize(state, new DateTime(2026, 10, 15));
+        Equal(2, state.Tasks.Count, "background-only legacy difference retained");
+        Equal(2, state.Tasks.Select(t => t.Id).Distinct().Count(), "merged differing task gets distinct ID");
+        Assert(state.Tasks.Any(t => t.BackgroundColor == null) && state.Tasks.Any(t => t.BackgroundColor == "#AABBCC"), "both unfilled and filled variants preserved");
     }
 
     private static void FailedSave()

@@ -44,7 +44,8 @@ if ($Test) {
     $suites = @(
         @{ Name = 'Core'; File = 'CoreTests.cs'; Entry = 'CoreTests'; Sources = @(Get-Sources @('Core','Persistence')); References = $coreReferences },
         @{ Name = 'Rendering'; File = 'PrintLayoutTests.cs'; Entry = 'TaskBoard.Tests.PrintLayoutTests'; Sources = @(Get-Sources @('Core','Rendering')); References = $renderReferences },
-        @{ Name = 'Interaction'; File = 'InteractionTests.cs'; Entry = 'TaskBoard.Tests.InteractionTests'; Sources = $sources; References = $referenceNames }
+        @{ Name = 'Interaction'; File = 'InteractionTests.cs'; Entry = 'TaskBoard.Tests.InteractionTests'; Sources = $sources; References = $referenceNames },
+        @{ Name = 'PrintPipeline'; File = 'PrintPipelineTests.cs'; Entry = 'TaskBoard.Tests.PrintPipelineTests'; Sources = $sources; References = $referenceNames }
     )
     foreach ($suite in $suites) {
         $testBinary = Join-Path $testOutput ('TaskBoard.' + $suite.Name + 'Tests.exe')

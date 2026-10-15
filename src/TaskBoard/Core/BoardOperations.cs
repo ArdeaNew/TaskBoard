@@ -40,7 +40,7 @@ namespace TaskBoard.Core
 
             for (int day = 1; day <= 7; day++)
             {
-                TaskItem task = members[day - 1] ?? new TaskItem();
+                TaskItem task = members[day - 1] ?? new TaskItem { BackgroundColor = source.BackgroundColor };
                 task.Column = day;
                 task.Text = source.Text;
                 task.Color = source.Color;
@@ -102,7 +102,8 @@ namespace TaskBoard.Core
                 Color = task.Color,
                 Column = task.Column,
                 DailyGroupId = task.DailyGroupId,
-                IsCompleted = task.IsCompleted
+                IsCompleted = task.IsCompleted,
+                BackgroundColor = task.BackgroundColor
             }).ToList();
         }
 
