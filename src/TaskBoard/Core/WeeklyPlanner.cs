@@ -44,6 +44,68 @@ namespace TaskBoard.Core
                 state.ActiveWeekStart = currentKey;
             }
             SelectWeek(state, today, today);
+            RollOverUnfinished(state, today);
+        }
+
+        public static int RollOverUnfinished(BoardState state, DateTime today)
+        {
+            EnsureState(state);
+            if (state.Weeks.Count == 0)
+            {
+                Initialize(state, today);
+                return 0;
+            }
+            CommitActiveWeek(state);
+            DateTime currentMonday = MondayOf(today);
+            var expired = state.Weeks.Where(plan => ParseWeekStart(plan.WeekStart) < currentMonday)
+                .OrderBy(plan => ParseWeekStart(plan.WeekStart)).ToList();
+            if (!expired.Any(plan => plan.Tasks.Any(task => !task.IsCompleted))) return 0;
+
+            // Seed normal daily occurrences before removing their previous-week
+            // sources. Skipped weeks contribute only tasks that actually exist.
+            WeekPlan target = GetOrCreateWeek(state, currentMonday, today);
+            int moved = 0;
+            foreach (WeekPlan plan in expired)
+            {
+                // Filtering a day retains its visible order even when a loaded
+                // list happens to interleave tasks from several columns.
+                var unfinished = plan.Tasks.Where(task => !task.IsCompleted)
+                    .OrderBy(task => task.Column).ToList();
+                foreach (TaskItem task in unfinished)
+                {
+                    task.Column = 7;
+                    // Missed daily occurrences are independent work. Keeping the
+                    // group would merge several occurrences into one Sunday.
+                    task.DailyGroupId = null;
+                }
+                plan.Tasks.RemoveAll(task => !task.IsCompleted);
+                target.Tasks.AddRange(unfinished);
+                moved += unfinished.Count;
+            }
+            ArrangeWeek(target);
+            return moved;
+        }
+
+        public static bool CanMoveToNextWeek(BoardState state)
+        {
+            if (state == null) throw new ArgumentNullException("state");
+            // Both the following Monday and its Sunday must be representable.
+            return CurrentWeekStart(state) <= DateTime.MaxValue.Date.AddDays(-13);
+        }
+
+        public static bool MoveToNextWeek(BoardState state, TaskItem task, DateTime today)
+        {
+            EnsureState(state);
+            if (task == null || !state.Tasks.Contains(task) || !CanMoveToNextWeek(state)) return false;
+            CommitActiveWeek(state);
+            DateTime targetMonday = CurrentWeekStart(state).AddDays(7);
+            WeekPlan target = GetOrCreateWeek(state, targetMonday, today);
+            state.Tasks.Remove(task);
+            task.Column = 7;
+            task.DailyGroupId = null;
+            target.Tasks.Add(task);
+            ArrangeWeek(target);
+            return true;
         }
 
         public static void SelectWeek(BoardState state, DateTime anyDate, DateTime today)
@@ -53,16 +115,7 @@ namespace TaskBoard.Core
             CommitActiveWeek(state);
             DateTime monday = MondayOf(anyDate);
             string key = Key(monday);
-            WeekPlan plan = Find(state, key);
-            if (plan == null)
-            {
-                plan = new WeekPlan
-                {
-                    WeekStart = key,
-                    Tasks = monday >= MondayOf(today) ? SeedDailyTasks(state, monday) : new List<TaskItem>()
-                };
-                state.Weeks.Add(plan);
-            }
+            WeekPlan plan = GetOrCreateWeek(state, monday, today);
             state.ActiveWeekStart = key;
             state.Tasks = plan.Tasks;
             BoardOperations.ArrangeTasks(state);
@@ -159,6 +212,27 @@ namespace TaskBoard.Core
         private static WeekPlan Find(BoardState state, string key)
         {
             return state.Weeks.FirstOrDefault(plan => Key(ParseWeekStart(plan.WeekStart)) == key);
+        }
+
+        private static WeekPlan GetOrCreateWeek(BoardState state, DateTime monday, DateTime today)
+        {
+            string key = Key(monday);
+            WeekPlan plan = Find(state, key);
+            if (plan == null)
+            {
+                plan = new WeekPlan
+                {
+                    WeekStart = key,
+                    Tasks = monday >= MondayOf(today) ? SeedDailyTasks(state, monday) : new List<TaskItem>()
+                };
+                state.Weeks.Add(plan);
+            }
+            return plan;
+        }
+
+        private static void ArrangeWeek(WeekPlan plan)
+        {
+            BoardOperations.ArrangeTasks(new BoardState { Tasks = plan.Tasks });
         }
 
         private static void EnsureState(BoardState state)

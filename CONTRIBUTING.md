@@ -23,8 +23,8 @@ Scripts use the local compiler and Framework reference assemblies without NuGet 
   Declare build dependencies in `TaskBoard.csproj`. Core checks must not reference WPF; rendering checks must not reference UI or printing components.
 - 为行为变更加有意义的验证；涉及界面时检查英文标签、缩放、中文输入法、空白新增、拖拽、打印与导出。
   Add meaningful verification for behavior changes. For UI work, check English labels, scaling, Chinese IME input, blank-space creation, dragging, printing, and export.
-- 提交说明问题、结果和验证方式。使用虚构示例，不提交个人数据、截图、导出文件或构建产物；文档保持中英文对照。
-  Describe the problem, result, and validation in changes. Use fictional examples; exclude personal data, screenshots, exports, and build output. Keep documentation bilingual.
+- 提交说明问题、结果和验证方式。使用虚构示例，不提交个人数据、个人截图、导出文件或构建产物；只有 `tools/Create-DemoImages.ps1` 可复现生成的虚构演示图可进入 `docs/images`。文档保持中英文对照。
+  Describe the problem, result, and validation in changes. Use fictional examples; exclude personal data, personal screenshots, exports, and build output. Only fictional demo images reproducible with `tools/Create-DemoImages.ps1` belong in `docs/images`. Keep documentation bilingual.
 
 本地构建、打包和测试不会自动上传或发布。更多边界见[架构说明](docs/ARCHITECTURE.md)和[发布检查](docs/RELEASE_CHECKLIST.md)。
 

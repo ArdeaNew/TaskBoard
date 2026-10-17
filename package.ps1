@@ -45,6 +45,12 @@ The dot sets text color; right-click Background color for presets, #RRGGBB, or N
 Use header arrows for weeks, click the week number for dates, or This week to return. Month/year remaining always use today.
 历史与未来周独立保存；新未来周继承日常任务并重置完成。
 Past and future plans save separately. New future weeks inherit daily tasks with completion reset.
+系统跨周或重启时，过去周中未完成项自动移到本周周日末尾；完成历史与未来计划保留。
+At a system week change or startup, overdue pending tasks move to the current Sunday's end; completed history and future plans remain.
+未完成日常副本移为独立待办；只延续实际存在的任务，不补造错过周的日常副本。
+Missed daily occurrences become independent tasks. Only existing tasks move; skipped weeks do not generate invented daily copies.
+右击 Move to next week 将单项移到所选周的下一周周日；颜色、完成状态保留，日常解除当前项关联，Ctrl+Z 恢复两周。
+Right-click Move to next week to move one task to the following Sunday; colors and completion stay intact, daily occurrences detach, and Ctrl+Z restores both weeks.
 在某天底部停留显示 Clear day；核对日期/任务数后确认，只清空该天，Ctrl+Z 撤销。
 Hover at a day's bottom for Clear day. Confirm its date/count to clear only that day; Ctrl+Z undoes it.
 

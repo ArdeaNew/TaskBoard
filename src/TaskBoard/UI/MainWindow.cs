@@ -22,6 +22,7 @@ namespace TaskBoard.UI
     {
         private readonly BoardStore store;
         private readonly BoardState state;
+        private readonly Func<DateTime> localNow;
         private readonly Grid surface = new Grid { Background = Brushes.White };
         private readonly Grid board = new Grid();
         private readonly Canvas overlay = new Canvas { IsHitTestVisible = false, ClipToBounds = true };
@@ -38,18 +39,24 @@ namespace TaskBoard.UI
         private readonly DispatcherTimer dateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         private readonly DispatcherTimer saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         private readonly TaskDragController dragController;
-        private readonly Stack<List<TaskItem>> undo = new Stack<List<TaskItem>>();
+        private readonly Stack<TaskUndoEntry> undo = new Stack<TaskUndoEntry>();
         private List<TaskItem> editSnapshot;
         private TaskCard editing;
         private bool dirty;
         private bool closed;
 
-        public MainWindow(BoardStore boardStore)
+        public MainWindow(BoardStore boardStore) : this(boardStore, () => DateTime.Now) { }
+
+        internal MainWindow(BoardStore boardStore, Func<DateTime> localNow)
         {
+            if (boardStore == null) throw new ArgumentNullException("boardStore");
+            if (localNow == null) throw new ArgumentNullException("localNow");
+            this.localNow = localNow;
             store = boardStore;
             state = store.Load();
-            WeeklyPlanner.Initialize(state, DateTime.Today);
-            lastSystemWeek = WeeklyPlanner.MondayOf(DateTime.Today);
+            DateTime today = localNow().Date;
+            WeeklyPlanner.Initialize(state, today);
+            lastSystemWeek = WeeklyPlanner.MondayOf(today);
             Title = "TaskBoard";
             Language = XmlLanguage.GetLanguage("en-US");
             Background = Brushes.White;
@@ -94,6 +101,9 @@ namespace TaskBoard.UI
                 if (!string.IsNullOrEmpty(store.LastWarning))
                     BoardDialog.Show(this, store.LastWarning, "TaskBoard");
             };
+            // Startup can roll overdue tasks across archive boundaries even if
+            // the user makes no further edits during this session.
+            QueueSave();
         }
 
         private void BuildLayout()
@@ -256,7 +266,7 @@ namespace TaskBoard.UI
 
         private TaskCard CreateCard(TaskItem item)
         {
-            var card = new TaskCard(item);
+            var card = new TaskCard(item) { CanMoveToNextWeek = WeeklyPlanner.CanMoveToNextWeek(state) };
             card.EditStarted += (s, e) =>
             {
                 if (editing != null && editing != card) editing.CommitEdit();
@@ -305,6 +315,7 @@ namespace TaskBoard.UI
                 RenderTasks();
                 QueueSave();
             };
+            card.MoveToNextWeekRequested += (s, e) => MoveTaskToNextWeek(item);
             card.CompletionRequested += (s, e) =>
             {
                 if (editing != null) editing.CommitEdit();
@@ -320,6 +331,28 @@ namespace TaskBoard.UI
                 QueueSave();
             };
             return card;
+        }
+
+        private void MoveTaskToNextWeek(TaskItem item)
+        {
+            dragController.Cancel();
+            dragController.CompleteDropAnimation();
+            if (editing != null) editing.CommitEdit();
+            if (!state.Tasks.Contains(item) || string.IsNullOrWhiteSpace(item.Text) ||
+                !WeeklyPlanner.CanMoveToNextWeek(state)) return;
+
+            string destination = WeeklyPlanner.CurrentWeekStart(state).AddDays(7)
+                .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            WeekPlan existing = state.Weeks.Find(plan => plan.WeekStart == destination);
+            var before = existing == null ? null : new WeekPlan
+            {
+                WeekStart = existing.WeekStart, Tasks = BoardOperations.CloneTasks(existing.Tasks)
+            };
+            var entry = new TaskUndoEntry(Snapshot(), destination, before);
+            if (!WeeklyPlanner.MoveToNextWeek(state, item, localNow().Date)) return;
+            PushUndo(entry);
+            RenderTasks();
+            QueueSave();
         }
 
         private void AddTask(int column)
@@ -346,14 +379,20 @@ namespace TaskBoard.UI
             else if (e.Key == Key.S && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
             { ExportImage(); e.Handled = true; }
             else if (e.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
-            { AddTask(((int)DateTime.Now.DayOfWeek + 6) % 7); e.Handled = true; }
+            { AddTask(((int)localNow().DayOfWeek + 6) % 7); e.Handled = true; }
             else if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control && editing == null && !dragController.IsDragging && VisualTree.FindAncestor<TextBox>(e.OriginalSource as DependencyObject) == null && undo.Count > 0)
             {
-                state.Tasks = undo.Pop();
-                RenderTasks();
-                QueueSave();
+                UndoTasks();
                 e.Handled = true;
             }
+        }
+
+        private void UndoTasks()
+        {
+            if (editing != null || dragController.IsDragging || undo.Count == 0) return;
+            undo.Pop().Restore(state);
+            RenderTasks();
+            QueueSave();
         }
 
         private void Print()
@@ -376,18 +415,25 @@ namespace TaskBoard.UI
 
         private void UpdateDate()
         {
-            var systemWeek = WeeklyPlanner.MondayOf(DateTime.Today);
+            DateTime now = localNow();
+            var systemWeek = WeeklyPlanner.MondayOf(now);
             if (systemWeek != lastSystemWeek)
             {
-                var previousSystemWeek = lastSystemWeek;
                 bool followingCurrentWeek = WeeklyPlanner.CurrentWeekStart(state) == lastSystemWeek;
-                lastSystemWeek = systemWeek;
+                dragController.Cancel();
+                dragController.CompleteDropAnimation();
+                if (editing != null) editing.CommitEdit();
+                if (!SaveNow()) return;
+                WeeklyPlanner.RollOverUnfinished(state, now.Date);
+                if (followingCurrentWeek) WeeklyPlanner.SelectWeek(state, systemWeek, now.Date);
+                undo.Clear();
+                editSnapshot = null;
+                editing = null;
+                RenderTasks();
                 if (followingCurrentWeek)
-                {
-                    NavigateWeek(systemWeek);
-                    if (WeeklyPlanner.CurrentWeekStart(state) != systemWeek) lastSystemWeek = previousSystemWeek;
-                    return;
-                }
+                    foreach (var scroll in scrollers) scroll.ScrollToTop();
+                lastSystemWeek = systemWeek;
+                QueueSave();
             }
             var selected = WeeklyPlanner.CurrentWeekStart(state);
             week.Text = BoardLabels.Week(selected);
@@ -395,7 +441,7 @@ namespace TaskBoard.UI
             chooseWeekButton.ToolTip = selected.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture) + " — " + end.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture);
             previousWeekButton.IsEnabled = selected >= DateTime.MinValue.Date.AddDays(7);
             nextWeekButton.IsEnabled = selected <= DateTime.MaxValue.Date.AddDays(-7);
-            remaining.Text = BoardLabels.Remaining(DateTime.Now);
+            remaining.Text = BoardLabels.Remaining(now);
         }
 
         private void NavigateWeek(DateTime anyDay)
@@ -405,7 +451,7 @@ namespace TaskBoard.UI
             if (editing != null) editing.CommitEdit();
             if (!SaveNow()) return;
             if (WeeklyPlanner.MondayOf(anyDay) == WeeklyPlanner.CurrentWeekStart(state)) return;
-            WeeklyPlanner.SelectWeek(state, anyDay, DateTime.Today);
+            WeeklyPlanner.SelectWeek(state, anyDay, localNow().Date);
             undo.Clear();
             editSnapshot = null;
             editing = null;
@@ -415,7 +461,7 @@ namespace TaskBoard.UI
             QueueSave();
         }
 
-        private void GoToCurrentWeek() { NavigateWeek(DateTime.Today); }
+        private void GoToCurrentWeek() { NavigateWeek(localNow().Date); }
 
         private void OpenWeekPicker()
         {
@@ -453,7 +499,12 @@ namespace TaskBoard.UI
 
         private void PushUndo(List<TaskItem> snapshot)
         {
-            undo.Push(snapshot);
+            PushUndo(new TaskUndoEntry(snapshot));
+        }
+
+        private void PushUndo(TaskUndoEntry entry)
+        {
+            undo.Push(entry);
             if (undo.Count > 30)
             {
                 var recent = undo.Take(30).Reverse().ToArray();

@@ -14,6 +14,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Test
   Core: ISO/date boundaries and leap years, month/year remaining including today, migration, weekly archives, daily inheritance, ordering, atomic saves, and recovery.
 - 顺序：空白点击与 Ctrl+N 总在当天末尾新增；普通与日常待办保持用户顺序；完成置顶；取消空白草稿不落盘，切周撤销隔离。
   Ordering: blank clicks and Ctrl+N always append; pending ordinary/daily tasks keep user order; completion moves to the top; canceled drafts stay off disk; undo is isolated across navigation.
+- 跨周：系统新周及重启将过去周所有实际存在的未完成任务移至本周周日；多周离开、日常解除关联、已完成归档、未来计划、重复执行无重复、浏览未来不提前移动。
+  Rollover: a system week change and startup move all existing overdue pending tasks to the current Sunday; verify several missed weeks, detached daily occurrences, completed archives, future plans, repeat idempotency, and no early moves when browsing ahead.
+- 单项移至下周：右击菜单含 **Move to next week**，编辑中也可用；来源为所选周，目标为下一周周日；保留样式与完成，日常只解除当前项；撤销恢复两周且不影响无关周。
+  Move one task: **Move to next week** appears in the context menu, including during editing. The selected week is the source and the following Sunday is the destination. Preserve styles and completion, detach only the selected daily occurrence, and undo both weeks without changing unrelated plans.
 - 交互：编辑、中文输入法、跨天拖拽、取消与自动滚动；颜色预设/自定义/清除、每日日常背景独立、撤销及保存后恢复。
   Interaction: editing, Chinese IME, cross-day dragging, cancellation, and scrolling; preset/custom/cleared colors, independent daily fills, undo, and reload.
 - 英文界面：七个星期、周与剩余指标、菜单、提示、预览和应用确认框；**This week** 清晰返回本周；**Clear day** 等宽悬停显示、默认取消，确认只影响一天。
@@ -33,10 +37,10 @@ Record the version, binary size, actual passing counts, and unverified areas in 
 powershell -NoProfile -ExecutionPolicy Bypass -File .\package.ps1
 ```
 
-- `dist/TaskBoard-1.4.1-portable.zip`：仅 `TaskBoard.exe`、`TaskBoard.exe.config`、`README.txt`、`LICENSE`。
-  `dist/TaskBoard-1.4.1-portable.zip`: only `TaskBoard.exe`, `TaskBoard.exe.config`, `README.txt`, and `LICENSE`.
-- `dist/TaskBoard-1.4.1-source.zip`：源码、脚本、图标、测试与中英文说明；排除 `.git`、`artifacts`、`qa-data`、`dist`、缓存、个人数据与截图。
-  `dist/TaskBoard-1.4.1-source.zip`: source, scripts, icons, tests, and bilingual guides; exclude `.git`, `artifacts`, `qa-data`, `dist`, caches, personal data, and screenshots.
+- `dist/TaskBoard-1.5.0-portable.zip`：仅 `TaskBoard.exe`、`TaskBoard.exe.config`、`README.txt`、`LICENSE`。
+  `dist/TaskBoard-1.5.0-portable.zip`: only `TaskBoard.exe`, `TaskBoard.exe.config`, `README.txt`, and `LICENSE`.
+- `dist/TaskBoard-1.5.0-source.zip`：源码、脚本、图标、测试与中英文说明，以及可复现的 `docs/images` 虚构演示图；排除 `.git`、`artifacts`、`qa-data`、`dist`、缓存、个人数据及个人截图。
+  `dist/TaskBoard-1.5.0-source.zip`: source, scripts, icons, tests, bilingual guides, and reproducible fictional `docs/images`; exclude `.git`, `artifacts`, `qa-data`, `dist`, caches, personal data, and personal screenshots.
 - 用 `Get-FileHash -Algorithm SHA256` 复核 `dist/SHA256SUMS.txt`；确认版本、嵌入图标及 ZIP 内容。检查源码及附件不含真实任务、备份或导出文件。
   Verify `dist/SHA256SUMS.txt` with `Get-FileHash -Algorithm SHA256`, then check the version, embedded icon, and archive contents. Ensure source and assets contain no real tasks, backups, or exports.
 
@@ -44,14 +48,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\package.ps1
 
 Packaging does not download, upload, push, or write test data into the default user directory.
 
+公开演示图必须用 `tools/Create-DemoImages.ps1` 重新生成并逐张查看。确认所有任务来自 `DemoImages.cs` 内的虚构样例，固定演示日期与说明一致，两张图分别清晰展示时间指标及 **Move to next week** 菜单。不得截取桌面、加载真实 `board.json` 或发布临时演示 JSON。
+
+Regenerate public demo images with `tools/Create-DemoImages.ps1` and inspect each one. Confirm all tasks come from the fictional fixtures in `DemoImages.cs`, that the fixed sample date matches the caption, and that the two images clearly show the time metrics and **Move to next week** menu. Never capture the desktop, load a real `board.json`, or publish temporary demo JSON.
+
 ## 解压与升级 / Extract and upgrade
 
 1. 解压至独立目录，保留配置文件；以 `TaskBoard.exe --data-dir "隔离目录"` 检查首次启动和重开。
    Extract into a separate directory with the configuration file. Use `TaskBoard.exe --data-dir "isolated-directory"` to verify first launch and reopening.
 2. 核对约 70% 窗口、英文星期、周数和月余/年余；编辑中英文，空白新增应在末尾；完成、日常复制、颜色及顺序切周后保留。
    Check the roughly 70% window, English days, week number, and month/year remaining. Edit Chinese/English tasks and append via blank space; verify completion, daily copies, colors, and order survive navigation.
-3. 打开新未来周只继承日常并重置完成；未安排的过去周为空。关闭重开保留归档并默认本周。
-   A new future week inherits only daily tasks with completion reset; unplanned past weeks are empty. Reopening retains archives and defaults to this week.
+3. 打开新未来周只继承日常并重置完成，不提前移动待办；未安排的过去周为空。关闭重开保留归档并默认本周，将过去周未完成项集中到本周周日；已完成历史保留。
+   A new future week inherits daily tasks with completion reset without moving pending tasks early; unplanned past weeks are empty. Reopening retains archives and defaults to this week, gathering overdue pending work on Sunday while preserving completed history.
 4. PNG 包含周日末项与背景；预览核对七天、缩放和 **Fit page**，打印核对 A4 横向及实际边距/文字/颜色。
    PNG includes Sunday's last task and fills. Verify all days, zoom, and **Fit page** in preview; check A4 landscape and actual print margins/text/colors.
 5. 用含旧 `recordFields` 的隔离数据验证升级保留原字段，但界面/输出不显示。任务与备份只能出现在所选目录，发布 ZIP 不含测试数据。

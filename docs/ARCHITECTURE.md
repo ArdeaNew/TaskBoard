@@ -11,16 +11,18 @@ TaskBoard is a native WPF / .NET Framework 4.8 desktop app. The runtime needs th
 | `Program.cs` | STA 入口、数据目录、每个数据目录单实例、应用生命周期。 / STA entry point, data directory, one instance per data directory, and app lifetime. |
 | `Core/TaskItem.cs`, `BoardState.cs`, `WeekPlan.cs` | 任务、日常分组、独立完成状态与周归档。 / Tasks, daily groups, independent completion, and weekly archives. |
 | `Core/BoardOperations.cs`, `TaskColors.cs` | 每日复制、同步、颜色校验、顺序、清空与快照。 / Daily copies, synchronization, color validation, ordering, clearing, and snapshots. |
-| `Core/WeeklyPlanner.cs`, `DateMetrics.cs` | 周导航、迁移、日常任务继承、ISO 周数与剩余百分比。 / Week navigation, migration, daily inheritance, ISO weeks, and remaining percentages. |
+| `Core/WeeklyPlanner.cs`, `DateMetrics.cs` | 周导航、迁移、日常任务继承、未完成延续、单项移至下周、ISO 周数与剩余百分比。 / Week navigation, migration, daily inheritance, unfinished rollover, moving one task to next week, ISO weeks, and remaining percentages. |
 | `Persistence/BoardStore.cs`, `CompatibilityData.cs` | JSON 规范化、原子保存、备份恢复及未知旧字段保留。 / JSON normalization, atomic saves, backup recovery, and opaque legacy fields. |
 | `UI/MainWindow.cs`, `TaskDragController.cs` | 布局、周导航、编辑/撤销/保存协调；指针、拖拽浮层、自动滚动与动画。 / Layout, week navigation, edit/undo/save coordination; pointer input, drag overlay, scrolling, and animation. |
 | `UI/TaskCard.cs`, `ColorPalette.cs` | 编辑、输入法、文字/背景色、编号、完成状态及复用调色板。 / Editing, IME, text/background colors, numbering, completion, and reusable palettes. |
+| `UI/TaskUndoEntry.cs` | 普通操作的当前周快照；跨周移动另外记录目标周的准确操作前状态。 / Current-week snapshots for ordinary actions; exact prior destination state added for cross-week moves. |
 | `UI/DayClearButton.cs`, `ColumnPanel.cs`, `VisualTree.cs` | 底部悬停按钮、布局过渡和共享祖先查询。 / Footer hover actions, layout transitions, and shared ancestor lookup. |
 | `UI/MinimalButton.cs`, `BoardDialog.cs` | 共享极简按钮及应用自己的英文消息/确认框。 / Shared minimal buttons and app-owned English messages/confirmations. |
 | `Rendering/BoardLabels.cs`, `Typography.cs` | 界面与输出共用的星期/日期指标标签，以及中英文字体映射。 / Shared day/date-metric labels for screen and output, plus Latin/Chinese font mapping. |
 | `Rendering/BoardPageRenderer.cs`, `BoardPage.cs` | 无文件访问或对话框的矢量排版、页面尺寸及文字轮廓。 / Vector layout, page dimensions, and text outlines without file access or dialogs. |
 | `UI/PrintPreviewWindow.cs`, `PageVisual.cs` | 整页预览、缩放和适合页面，共用矢量绘图。 / Full-page preview, zoom, and fit using the shared vector drawing. |
 | `UI/BoardPrinter.cs`, `BoardPrintDocument.cs`, `BoardImageExporter.cs` | 打印机票据、硬边距和固定文档；保存对话框、PNG 编码及原子输出。 / Printer tickets, hard margins, and fixed documents; save dialogs, PNG encoding, and atomic export. |
+| `tools/Create-DemoImages.ps1`, `DemoImages.cs` | 仅用虚构样例和真实 WPF 控件离屏生成公开说明图片，临时数据与应用代码隔离。 / Off-screen documentation images from fictional fixtures and real WPF controls, with isolated temporary data. |
 
 依赖单向流向模型：`Persistence → Core`、`Rendering → Core`、`UI → Core / Persistence / Rendering`。入口组合存储与窗口；拖拽控制器不依赖主窗口或存储。项目文件统一声明生产引用，核心检查不引用 WPF，绘制检查不引用 UI 或打印组件。
 
@@ -49,6 +51,18 @@ Optional `BackgroundColor` is normalized `#RRGGBB`; missing, null, or invalid va
 已有周恢复原状态。首次打开本周或未来周，从最近较早的已知周复制日常任务并重置完成状态；无归档的过去周为空。查看本周时跨周自动进入新周，查看其他周时保留选择。日常同步不影响其他周。无归档的旧任务迁入升级时的本周。
 
 Existing weeks restore their state. A new current or future week copies daily tasks from the nearest earlier known week and resets completion; unarchived past weeks are empty. The current-week view follows system week changes; other selected weeks stay selected. Daily synchronization does not cross weeks. Legacy tasks without an archive migrate into the week current at upgrade.
+
+`Initialize` 先建立本周及正常日常副本，再由 `RollOverUnfinished` 将所有早于系统本周的已保存未完成任务移至本周周日末尾。原任务 ID、文字及颜色保留，已完成项不动；旧日常副本清除 `DailyGroupId`，避免把多个未完成次数合并为一个日常任务。只移动实际存在的任务，不为跳过的周创建历史日常副本。重复调用无重复移动，未来周不参与自动延续。
+
+`Initialize` creates the current week and its normal daily copies first, then `RollOverUnfinished` moves saved pending tasks from earlier weeks to the current Sunday's end. IDs, text, and colors stay intact; completed tasks stay put. Missed daily occurrences clear `DailyGroupId` so several unfinished occurrences do not merge into one routine. Only existing tasks move, with no historical daily copies invented for skipped weeks. Repeated calls do not duplicate moves, and future weeks never participate in automatic rollover.
+
+系统日期每 30 秒检查：实际周一边界触发延续，即使当前正在浏览历史或未来周；只有原本显示旧系统本周时，界面才跟随切到新周。启动与跨周后的变更进入延迟保存。浏览未来周只做导航和正常日常继承，不提前触发自动移动。
+
+The 30-second date check triggers rollover at an actual system week boundary even while viewing history or future plans. The view follows to the new week only if it previously showed the old system week. Startup and rollover changes enter the delayed save path. Browsing future weeks only navigates and performs normal daily inheritance; it does not move tasks early.
+
+右击 **Move to next week** 调用 `MoveToNextWeek`，以所选周为来源，移动单项到下一周周日。目标周不存在时按正常规则建立，再追加该项；完成状态保留，日常项解除组关联。`TaskUndoEntry` 普通操作只克隆当前周，跨周移动再保存目标周的前态；撤销精确恢复两周，并在目标原本不存在时移除新建周，不复制整个归档或影响其他周。切周后清空撤销栈。
+
+The context-menu action **Move to next week** calls `MoveToNextWeek`, using the selected week as the source and the following Sunday as the destination. A missing destination is created using normal inheritance before appending the task. Completion stays intact and daily occurrences detach. For ordinary actions, `TaskUndoEntry` clones only the current week; cross-week moves also retain the destination's prior state. Undo restores both weeks exactly and removes a newly created destination when appropriate, without cloning the entire archive or changing unrelated weeks. Navigation clears undo history.
 
 `DateMetrics` 使用系统本地日期：ISO 周按周四所属年计算；月余为 `(月总天数 - 当日 + 1) / 月总天数`，年余同理，包含今天并处理闰年。显示周数取所选周，剩余百分比始终取系统当天；界面、打印与 PNG 通过 `BoardLabels` 使用一致标签。
 
@@ -98,9 +112,9 @@ PNG encodes the same page at 192 DPI through a same-directory temporary file and
 
 The app contains no HTTP, sockets, telemetry, automatic updater, or embedded web content. Build/package scripts download no dependencies; XML namespace URLs are identifiers. Windows and user configuration determine whether selected print queues or file paths use a network. The app itself uploads nothing.
 
-预装 .NET SDK 10 与 Framework 4.8 Developer Pack 后，`build.ps1 -Test` 运行四组检查。`package.ps1` 生成 `TaskBoard-1.4.1-portable.zip`、`TaskBoard-1.4.1-source.zip` 和 `SHA256SUMS.txt`；便携包只含程序、配置、说明和许可证，源码包按白名单排除数据及构建产物。
+预装 .NET SDK 10 与 Framework 4.8 Developer Pack 后，`build.ps1 -Test` 运行四组检查。`package.ps1` 生成 `TaskBoard-1.5.0-portable.zip`、`TaskBoard-1.5.0-source.zip` 和 `SHA256SUMS.txt`；便携包只含程序、配置、说明和许可证，源码包按白名单排除数据及构建产物，并仅包含可复现的虚构说明图。
 
-With .NET SDK 10 and Framework 4.8 Developer Pack installed, `build.ps1 -Test` runs four suites. `package.ps1` produces `TaskBoard-1.4.1-portable.zip`, `TaskBoard-1.4.1-source.zip`, and `SHA256SUMS.txt`. The portable package holds only the app, configuration, guide, and license; a source allowlist excludes data and build output.
+With .NET SDK 10 and Framework 4.8 Developer Pack installed, `build.ps1 -Test` runs four suites. `package.ps1` produces `TaskBoard-1.5.0-portable.zip`, `TaskBoard-1.5.0-source.zip`, and `SHA256SUMS.txt`. The portable package holds only the app, configuration, guide, and license; a source allowlist excludes data and build output, including only reproducible fictional documentation images.
 
 GitHub Actions 在推送、拉取请求或手动触发时构建、检查并保存附件，无 Release 发布步骤。本地构建和打包不会上传；实际检查结果见 [VALIDATION.md](../VALIDATION.md)。
 

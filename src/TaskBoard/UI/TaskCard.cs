@@ -31,6 +31,7 @@ namespace TaskBoard.UI
         private readonly ColorPalette palette;
         private readonly ColorPalette backgroundPalette;
         private readonly ContextMenu actions;
+        private MenuItem moveToNextWeek;
         private bool isEditing;
         private bool isNew;
         private bool isComposing;
@@ -46,6 +47,11 @@ namespace TaskBoard.UI
         public TaskItem Item { get; private set; }
         public bool IsEditing { get { return isEditing; } }
         public bool IsPaletteOpen { get { return palette.IsOpen || backgroundPalette.IsOpen; } }
+        public bool CanMoveToNextWeek
+        {
+            get { return moveToNextWeek.IsEnabled; }
+            set { moveToNextWeek.IsEnabled = value; }
+        }
         public int Ordinal
         {
             get { return ordinal; }
@@ -63,6 +69,7 @@ namespace TaskBoard.UI
         public event EventHandler Cancelled;
         public event EventHandler DeleteRequested;
         public event EventHandler ApplyToEveryDayRequested;
+        public event EventHandler MoveToNextWeekRequested;
         public event EventHandler CompletionRequested;
 
         public TaskCard(TaskItem item)
@@ -405,10 +412,23 @@ namespace TaskBoard.UI
                 if (isEditing) CommitEdit();
                 if (!blankEdit && !string.IsNullOrWhiteSpace(Item.Text)) Raise(ApplyToEveryDayRequested);
             };
+            moveToNextWeek = new MenuItem
+            {
+                Header = "Move to next week",
+                ToolTip = "Move this task to Sunday of the following week"
+            };
+            moveToNextWeek.Click += (s, e) =>
+            {
+                if (!CanMoveToNextWeek) return;
+                bool blankEdit = isEditing && string.IsNullOrWhiteSpace(editor.Text);
+                if (isEditing) CommitEdit();
+                if (!blankEdit && !string.IsNullOrWhiteSpace(Item.Text)) Raise(MoveToNextWeekRequested);
+            };
             menu.Items.Add(edit);
             menu.Items.Add(color);
             menu.Items.Add(background);
             menu.Items.Add(everyDay);
+            menu.Items.Add(moveToNextWeek);
             menu.Items.Add(delete);
             return menu;
         }

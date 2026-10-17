@@ -1,5 +1,14 @@
 # 更新记录 / Changelog
 
+## 1.5.0 — 2026-10-17
+
+- 在系统跨周或重新启动时，将已保存过去周的未完成任务移至本周周日末尾；保留完成归档与未来计划，未完成日常副本解除关联，跳过的周不补造副本。
+  Move unfinished tasks from saved past weeks to the current Sunday's end at system rollover or startup. Preserve completed archives and future plans, detach missed daily occurrences, and do not invent copies for skipped weeks.
+- 右击任务新增 **Move to next week**，将单项移动到所选周的下一周周日，保留样式及完成状态；撤销同时恢复两周。
+  Add **Move to next week** to the task context menu, moving one task to the following Sunday's plan with its styles and completion intact. Undo restores both weeks.
+- 在中英文使用说明中添加可复现的真实控件演示图，突出 ISO 周数及月余/年余指标；仅使用虚构数据，不读取个人看板或截取桌面。
+  Add reproducible real-control images to the bilingual guide, highlighting ISO week and month/year remaining. Use only fictional fixtures without reading personal boards or capturing the desktop.
+
 ## 1.4.1 — 2026-10-15
 
 - 修正小屏幕环境下拖拽检查对滚动位置的假设，覆盖窄列中滚动至任务末尾后跨天放置的情况。

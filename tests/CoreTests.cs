@@ -47,6 +47,16 @@ internal static class CoreTests
         Run("Daily application and edits preserve independent task backgrounds", BackgroundDailyIsolation);
         Run("Future weeks retain weekday backgrounds and draft-safe archive snapshots", BackgroundWeeklyCarry);
         Run("Legacy tasks differing only in background are not lost during merge", BackgroundLegacyMerge);
+        Run("Unfinished rollover waits for Monday and handles the ISO year boundary", RolloverBoundary);
+        Run("Rollover appends in chronological visible order and is idempotent", RolloverOrder);
+        Run("Missed daily occurrences remain independent while the new week is seeded", RolloverDailyOccurrences);
+        Run("Week browsing does not roll tasks forward before their actual expiry", RolloverNavigationIsolation);
+        Run("Skipped weeks and backward clocks preserve only existing work", RolloverSkippedWeeks);
+        Run("Rollover commits replaced active lists and preserves the viewed week", RolloverReplacedActiveList);
+        Run("Rollover survives atomic saves, reloads and opaque legacy fields", RolloverPersistence);
+        Run("Manual next-week moves preserve task identity, styles and other plans", ManualNextWeekMove);
+        Run("Manual daily moves seed first and detach only the selected occurrence", ManualDailyMove);
+        Run("Manual next-week moves reject missing tasks and unrepresentable Sundays", ManualMoveLimits);
         Console.WriteLine(failures == 0 ? "All core checks passed." : failures + " check(s) failed.");
         return failures == 0 ? 0 : 1;
     }
@@ -618,6 +628,244 @@ internal static class CoreTests
         Equal(7, state.Tasks.Count, "current routines remain independent of history");
         WeeklyPlanner.SelectWeek(state, today.AddDays(7), today);
         Equal(7, state.Tasks.Count, "future uses current plan instead of blank older history");
+    }
+
+    private static void RolloverBoundary()
+    {
+        var state = Sample();
+        WeeklyPlanner.Initialize(state, new DateTime(2021, 1, 3, 23, 59, 59));
+        state.Tasks.Single(task => task.Id == "a").IsCompleted = true;
+        Equal(0, WeeklyPlanner.RollOverUnfinished(state, new DateTime(2021, 1, 3, 23, 59, 59)), "Sunday is still the source week");
+        Equal(3, WeeklyPlanner.RollOverUnfinished(state, new DateTime(2021, 1, 4)), "Monday rolls only pending tasks");
+        Equal("2020-12-28", state.ActiveWeekStart, "core operation preserves the selected week");
+        Equal("a", state.Tasks.Single().Id, "completed task remains in its original week");
+        WeekPlan next = state.Weeks.Single(plan => plan.WeekStart == "2021-01-04");
+        Equal("c,d,b", string.Join(",", next.Tasks.Select(task => task.Id)), "carry order follows Monday to Sunday");
+        Assert(next.Tasks.All(task => task.Column == 7 && !task.IsCompleted), "all pending work arrives on the new Sunday's column");
+        WeeklyPlanner.Initialize(state, new DateTime(2021, 1, 4));
+        Equal("2021-01-04", state.ActiveWeekStart, "startup selects the new system week");
+        Equal(3, state.Tasks.Count, "startup does not duplicate the carry");
+    }
+
+    private static void RolloverOrder()
+    {
+        var older = new WeekPlan
+        {
+            WeekStart = "2026-10-05",
+            Tasks = new List<TaskItem>
+            {
+                new TaskItem { Id = "old-fri", Text = "Same text", Column = 5 },
+                new TaskItem { Id = "old-mon-a", Text = "Same text", Column = 1 },
+                new TaskItem { Id = "old-mon-b", Text = "Same text", Column = 1 },
+                new TaskItem { Id = "old-done", IsCompleted = true, Column = 4 }
+            }
+        };
+        var previous = new WeekPlan
+        {
+            WeekStart = "2026-10-12",
+            Tasks = new List<TaskItem>
+            {
+                new TaskItem { Id = "new-tue", Column = 2 },
+                new TaskItem { Id = "new-mon", Column = 1 }
+            }
+        };
+        var current = new WeekPlan
+        {
+            WeekStart = "2026-10-19",
+            Tasks = new List<TaskItem>
+            {
+                new TaskItem { Id = "existing", Column = 7 },
+                new TaskItem { Id = "done", IsCompleted = true, Column = 7 },
+                new TaskItem { Id = "other-day", Column = 3 }
+            }
+        };
+        var state = new BoardState
+        {
+            ActiveWeekStart = previous.WeekStart,
+            Tasks = previous.Tasks,
+            Weeks = new List<WeekPlan> { current, previous, older }
+        };
+        Equal(5, WeeklyPlanner.RollOverUnfinished(state, new DateTime(2026, 10, 20)), "all actual expired occurrences move");
+        Equal("done,existing,old-mon-a,old-mon-b,old-fri,new-mon,new-tue",
+            string.Join(",", current.Tasks.Where(task => task.Column == 7).Select(task => task.Id)), "existing Sunday tasks precede stable chronological carryover");
+        Equal("old-done", older.Tasks.Single().Id, "older completion retained");
+        Equal(0, previous.Tasks.Count, "source loses pending tasks rather than copying them");
+        Equal(0, WeeklyPlanner.RollOverUnfinished(state, new DateTime(2026, 10, 20)), "same-week repeat is a no-op");
+        Equal(3, current.Tasks.Count(task => task.Text == "Same text"), "independent tasks with the same text are never deduplicated");
+    }
+
+    private static void RolloverDailyOccurrences()
+    {
+        var source = new TaskItem { Id = "daily-source", Text = "Daily sample", Color = "#123456", BackgroundColor = "#E0E8FF", Column = 1 };
+        var state = new BoardState { Tasks = new List<TaskItem> { source } };
+        BoardOperations.ApplyToEveryDay(state, source);
+        string group = source.DailyGroupId;
+        state.Tasks.Single(task => task.Column == 2).IsCompleted = true;
+        state.Tasks.Single(task => task.Column == 5).IsCompleted = true;
+        state.Tasks.Single(task => task.Column == 4).BackgroundColor = "#FFEEDD";
+        var pendingIds = new HashSet<string>(state.Tasks.Where(task => !task.IsCompleted).Select(task => task.Id));
+        WeeklyPlanner.Initialize(state, new DateTime(2026, 10, 15));
+        Equal(5, WeeklyPlanner.RollOverUnfinished(state, new DateTime(2026, 10, 19)), "each missed daily occurrence is retained");
+        Equal(2, state.Tasks.Count, "completed daily history remains in the source week");
+        Assert(state.Tasks.All(task => task.IsDaily && task.IsCompleted), "completed daily membership is unchanged");
+        WeekPlan current = state.Weeks.Single(plan => plan.WeekStart == "2026-10-19");
+        Equal(12, current.Tasks.Count, "normal seven-day schedule plus five existing missed occurrences");
+        Equal(7, current.Tasks.Count(task => task.IsDaily && task.DailyGroupId == group), "next week is seeded before source members detach");
+        Equal(7, current.Tasks.Where(task => task.IsDaily).Select(task => task.Column).Distinct().Count(), "new daily schedule has exactly one occurrence per day");
+        Assert(current.Tasks.Where(task => pendingIds.Contains(task.Id)).All(task => !task.IsDaily && task.Column == 7), "carried daily occurrences become independent Sunday work");
+        Assert(current.Tasks.Where(task => !pendingIds.Contains(task.Id)).All(task => !task.IsCompleted), "normal daily occurrences start incomplete");
+        Equal("#FFEEDD", current.Tasks.Where(task => task.IsDaily).Single(task => task.Column == 4).BackgroundColor, "normal next Thursday keeps its own background");
+        Equal("#FFEEDD", current.Tasks.Single(task => pendingIds.Contains(task.Id) && task.BackgroundColor == "#FFEEDD").BackgroundColor, "carried occurrence retains its own background");
+        WeeklyPlanner.SelectWeek(state, new DateTime(2026, 10, 19), new DateTime(2026, 10, 19));
+        TaskItem nextRoutine = state.Tasks.First(task => task.IsDaily);
+        BoardOperations.ApplyToEveryDay(state, nextRoutine);
+        Equal(5, state.Tasks.Count(task => pendingIds.Contains(task.Id)), "reapplying the daily schedule cannot discard carried occurrences");
+    }
+
+    private static void RolloverNavigationIsolation()
+    {
+        DateTime sunday = new DateTime(2026, 10, 18);
+        var state = Sample();
+        WeeklyPlanner.Initialize(state, sunday);
+        WeeklyPlanner.SelectWeek(state, sunday.AddDays(7), sunday);
+        state.Tasks.Add(new TaskItem { Id = "future", Text = "Future sample", Column = 6 });
+        WeeklyPlanner.SelectWeek(state, sunday.AddDays(14), sunday);
+        Equal(0, state.Tasks.Count, "planning a later week does not move unfinished work");
+        Equal(4, state.Weeks.Single(plan => plan.WeekStart == "2026-10-12").Tasks.Count, "source remains unchanged before actual rollover");
+        Equal(0, WeeklyPlanner.RollOverUnfinished(state, sunday), "actual Sunday is not expired by a future view");
+        Equal(4, WeeklyPlanner.RollOverUnfinished(state, sunday.AddDays(1)), "actual Monday moves the expired source");
+        Equal("2026-10-26", state.ActiveWeekStart, "future view is retained by core rollover");
+        WeekPlan next = state.Weeks.Single(plan => plan.WeekStart == "2026-10-19");
+        Equal(6, next.Tasks.Single(task => task.Id == "future").Column, "existing future plan retains its assigned day");
+        Equal(5, next.Tasks.Count, "only the newly current week receives carryover");
+    }
+
+    private static void RolloverSkippedWeeks()
+    {
+        var source = new TaskItem { Id = "old", Text = "Existing work", Column = 2 };
+        var state = new BoardState { Tasks = new List<TaskItem> { source } };
+        WeeklyPlanner.Initialize(state, new DateTime(2026, 9, 28));
+        Equal(1, WeeklyPlanner.RollOverUnfinished(state, new DateTime(2026, 10, 19)), "missed weeks catch up directly to the current Sunday");
+        Equal(2, state.Weeks.Count, "no intermediate week is synthesized");
+        WeekPlan current = state.Weeks.Single(plan => plan.WeekStart == "2026-10-19");
+        Assert(ReferenceEquals(source, current.Tasks.Single()), "the same occurrence moves across a long absence");
+        Equal(0, WeeklyPlanner.RollOverUnfinished(state, new DateTime(2026, 9, 21)), "moving the clock backward cannot move future work backward");
+        Equal(2, state.Weeks.Count, "backward clock does not create a redundant week");
+        Equal(1, WeeklyPlanner.RollOverUnfinished(state, new DateTime(2026, 10, 26)), "still unfinished work moves again when its current week expires");
+        Equal(0, current.Tasks.Count, "intermediate source is cleared on the next real rollover");
+        Equal("old", state.Weeks.Single(plan => plan.WeekStart == "2026-10-26").Tasks.Single().Id, "identity survives repeated weekly moves");
+    }
+
+    private static void RolloverReplacedActiveList()
+    {
+        var state = Sample();
+        DateTime previous = new DateTime(2026, 10, 12);
+        WeeklyPlanner.Initialize(state, previous);
+        state.Tasks = new List<TaskItem> { new TaskItem { Id = "after-undo", Text = "Replacement state", Column = 4 } };
+        Equal(1, WeeklyPlanner.RollOverUnfinished(state, previous.AddDays(7)), "replacement list is authoritative");
+        Equal(0, state.Tasks.Count, "replacement source list was moved");
+        Assert(ReferenceEquals(state.Tasks, state.Weeks.Single(plan => plan.WeekStart == "2026-10-12").Tasks), "active plan remains attached to its replacement list");
+        Equal("after-undo", state.Weeks.Single(plan => plan.WeekStart == "2026-10-19").Tasks.Single().Id, "stale archived tasks are not resurrected");
+    }
+
+    private static void RolloverPersistence()
+    {
+        InDirectory(delegate(string directory)
+        {
+            const string json = "{\"tasks\":[{\"id\":\"private-free-sample\",\"text\":\"Sample only\",\"color\":\"#123456\",\"backgroundColor\":\"#FFEEDD\",\"column\":2}],\"activeWeekStart\":\"2026-10-12\",\"weeks\":[],\"opaqueLegacy\":{\"empty\":\"\",\"value\":17}}";
+            File.WriteAllText(Path.Combine(directory, "board.json"), json);
+            var store = new BoardStore(directory);
+            BoardState state = store.Load();
+            WeeklyPlanner.Initialize(state, new DateTime(2026, 10, 19));
+            Equal(7, state.Tasks.Single().Column, "startup automatically moves the saved pending task to Sunday");
+            Equal("#FFEEDD", state.Tasks.Single().BackgroundColor, "background survives startup migration");
+            store.Save(WeeklyPlanner.SnapshotForSave(state, null));
+            string saved = File.ReadAllText(Path.Combine(directory, "board.json"));
+            Assert(saved.Contains("\"opaqueLegacy\"") && saved.Contains("\"empty\":\"\"") && saved.Contains("\"value\":17"), "opaque legacy data survives rollover serialization");
+            BoardState loaded = store.Load();
+            WeeklyPlanner.Initialize(loaded, new DateTime(2026, 10, 19));
+            Equal(1, loaded.Tasks.Count, "save and restart do not duplicate moved work");
+            Equal("private-free-sample", loaded.Tasks.Single().Id, "saved carry retains identity");
+            Equal(0, loaded.Weeks.Single(plan => plan.WeekStart == "2026-10-12").Tasks.Count, "saved source stays empty");
+        });
+    }
+
+    private static void ManualNextWeekMove()
+    {
+        DateTime today = new DateTime(2026, 10, 15);
+        var state = Sample();
+        WeeklyPlanner.Initialize(state, today);
+        TaskItem source = state.Tasks.Single(task => task.Id == "a");
+        source.BackgroundColor = "#FFEEDD";
+        source.IsCompleted = true;
+        WeeklyPlanner.SelectWeek(state, today.AddDays(7), today);
+        state.Tasks.Add(new TaskItem { Id = "existing", Text = "Next Sunday", Column = 7 });
+        state.Tasks.Add(new TaskItem { Id = "done", IsCompleted = true, Column = 7 });
+        WeeklyPlanner.SelectWeek(state, today, today);
+        Assert(WeeklyPlanner.CanMoveToNextWeek(state), "ordinary date can move forward");
+        Assert(WeeklyPlanner.MoveToNextWeek(state, source, today), "selected occurrence moves");
+        Equal("2026-10-12", state.ActiveWeekStart, "manual move preserves source view");
+        Equal(3, state.Tasks.Count, "only selected occurrence leaves source");
+        WeekPlan target = state.Weeks.Single(plan => plan.WeekStart == "2026-10-19");
+        Equal("done,a,existing", string.Join(",", target.Tasks.Select(task => task.Id)), "completion boundary is preserved and prior completed order is stable");
+        Assert(ReferenceEquals(source, target.Tasks.Single(task => task.Id == "a")), "manual move retains the exact task instance");
+        Equal("#A1B2C3", source.Color, "foreground preserved");
+        Equal("#FFEEDD", source.BackgroundColor, "background preserved");
+        Equal(7, source.Column, "manual destination is next Sunday");
+        Assert(source.IsCompleted, "manual move preserves completion");
+        Assert(!WeeklyPlanner.MoveToNextWeek(state, source, today), "moving an occurrence no longer in the source is a no-op");
+    }
+
+    private static void ManualDailyMove()
+    {
+        DateTime today = new DateTime(2026, 10, 15);
+        var source = new TaskItem { Id = "daily", Text = "Daily sample", Column = 3, BackgroundColor = "#CCEEFF" };
+        var state = new BoardState { Tasks = new List<TaskItem> { source } };
+        BoardOperations.ApplyToEveryDay(state, source);
+        string group = source.DailyGroupId;
+        WeeklyPlanner.Initialize(state, today);
+        Assert(WeeklyPlanner.MoveToNextWeek(state, source, today), "one selected daily occurrence moves");
+        Equal(6, state.Tasks.Count(task => task.DailyGroupId == group), "other source daily occurrences are unaffected");
+        WeekPlan next = state.Weeks.Single(plan => plan.WeekStart == "2026-10-19");
+        Equal(8, next.Tasks.Count, "normal daily schedule was seeded before detaching the carried occurrence");
+        Equal(7, next.Tasks.Count(task => task.DailyGroupId == group), "next week's daily schedule retains the source group");
+        Assert(!source.IsDaily && next.Tasks.Last() == source, "manual daily carry is independent and last on Sunday");
+        Equal(0, WeeklyPlanner.RollOverUnfinished(state, today), "manual future planning does not expire current week tasks");
+        WeeklyPlanner.SelectWeek(state, today.AddDays(-21), today);
+        var historical = new TaskItem { Id = "historical", Text = "Historical sample", Column = 2 };
+        state.Tasks.Add(historical);
+        Assert(WeeklyPlanner.MoveToNextWeek(state, historical, today), "manual move uses the viewed week even in history");
+        WeekPlan historicalTarget = state.Weeks.Single(plan => plan.WeekStart == "2026-09-28");
+        Equal("historical", historicalTarget.Tasks.Single().Id, "new historical target does not invent daily tasks");
+        Equal("2026-09-21", state.ActiveWeekStart, "historical source view is retained");
+    }
+
+    private static void ManualMoveLimits()
+    {
+        var state = new BoardState();
+        WeeklyPlanner.Initialize(state, new DateTime(9999, 12, 20));
+        var source = new TaskItem { Id = "limit", Text = "Limit sample", Column = 1 };
+        state.Tasks.Add(source);
+        Assert(!WeeklyPlanner.CanMoveToNextWeek(state), "following Sunday's date must fit in DateTime");
+        Assert(!WeeklyPlanner.MoveToNextWeek(state, source, DateTime.MaxValue), "out-of-range destination is rejected without mutation");
+        Equal(1, source.Column, "rejected task keeps its original day");
+        Equal(1, state.Weeks.Count, "rejected move does not create a week");
+        WeeklyPlanner.SelectWeek(state, new DateTime(9999, 12, 13), DateTime.MaxValue);
+        var valid = new TaskItem { Id = "valid", Column = 6 };
+        state.Tasks.Add(valid);
+        Assert(WeeklyPlanner.CanMoveToNextWeek(state), "last fully representable next Sunday is permitted");
+        Assert(WeeklyPlanner.MoveToNextWeek(state, valid, DateTime.MaxValue), "valid edge move succeeds");
+        Equal(7, valid.Column, "valid edge task arrives on Sunday");
+        Equal("9999-12-13", state.ActiveWeekStart, "edge move retains source view");
+        Assert(!WeeklyPlanner.MoveToNextWeek(state, null, DateTime.MaxValue), "null task is rejected");
+        Assert(!WeeklyPlanner.MoveToNextWeek(state, new TaskItem { Id = "missing" }, DateTime.MaxValue), "foreign task is rejected");
+        var minimum = new BoardState();
+        WeeklyPlanner.Initialize(minimum, DateTime.MinValue);
+        Equal(0, WeeklyPlanner.RollOverUnfinished(minimum, DateTime.MinValue), "minimum date rollover is a no-op");
+        WeeklyPlanner.Initialize(state, DateTime.MaxValue);
+        Equal("9999-12-27", state.ActiveWeekStart, "final partial system week remains representable");
+        Equal(2, state.Tasks.Count, "final partial week can retain the existing pending work without constructing an invalid date");
+        Assert(state.Tasks.All(task => task.Column == 7), "limit rollover uses the existing Sunday column safely");
     }
 
     private static void WeeklyMetadataValidation()

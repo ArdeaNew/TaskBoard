@@ -39,6 +39,8 @@ namespace TaskBoard.Tests
                 Assert(Math.Abs(window.Height - Math.Max(window.MinHeight, SystemParameters.WorkArea.Height * .7)) < 1, "Height uses 70% of work area.");
                 AssertBottomAppending(Path.Combine(directory, "bottom-append"));
                 AssertBottomAppending(Path.Combine(directory, "bottom-append-minimum"), true);
+                AssertMoveToNextWeek(Path.Combine(directory, "move-next-week"));
+                AssertRolloverWhileOpen(Path.Combine(directory, "live-rollover"));
                 Layout(window);
                 var state = Field<BoardState>(window, "state");
                 var panels = Field<ColumnPanel[]>(window, "columns");
@@ -210,8 +212,8 @@ namespace TaskBoard.Tests
                 blank.CancelEdit();
                 AssertDayOrder(state, panels[0], expected, "Cancelling a bottom draft leaves every committed task in place.");
 
-                var undo = Field<Stack<List<TaskItem>>>(window, "undo");
-                state.Tasks = undo.Pop();
+                var undo = Field<Stack<TaskUndoEntry>>(window, "undo");
+                undo.Pop().Restore(state);
                 expected.RemoveAt(expected.Count - 1);
                 Invoke(window, "RenderTasks");
                 Invoke(window, "QueueSave");
@@ -273,6 +275,196 @@ namespace TaskBoard.Tests
             }
             finally { if (window != null) window.Close(); }
         }
+
+        private static void AssertMoveToNextWeek(string directory)
+        {
+            DateTime today = new DateTime(2026, 10, 15);
+            DateTime monday = WeeklyPlanner.MondayOf(today);
+            string sourceKey = monday.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            string targetKey = monday.AddDays(7).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var source = new WeekPlan { WeekStart = sourceKey };
+            source.Tasks.Add(new TaskItem { Id = "move-normal", Text = "Synthetic task", Column = 3, Color = "#426787", BackgroundColor = "#E4EFFA" });
+            source.Tasks.Add(new TaskItem { Id = "move-complete", Text = "Completed synthetic task", Column = 2, IsCompleted = true });
+            for (int day = 1; day <= 7; day++) source.Tasks.Add(new TaskItem
+            { Id = "move-daily-" + day, Text = "Synthetic daily task", Column = day, DailyGroupId = "synthetic-group" });
+            var target = new WeekPlan { WeekStart = targetKey };
+            target.Tasks.Add(new TaskItem { Id = "existing-sunday", Text = "Existing Sunday plan", Column = 7, BackgroundColor = "#DCF0E7" });
+            var store = new BoardStore(directory);
+            store.Save(new BoardState { ActiveWeekStart = sourceKey, Tasks = source.Tasks, Weeks = new List<WeekPlan> { source, target } });
+            MainWindow window = null;
+            try
+            {
+                window = new MainWindow(store, () => today);
+                Layout(window);
+                var state = Field<BoardState>(window, "state");
+                var panels = Field<ColumnPanel[]>(window, "columns");
+                var undo = Field<Stack<TaskUndoEntry>>(window, "undo");
+                var card = FindCard(panels, "move-normal");
+                var move = MoveMenu(card);
+                Assert(move.IsEnabled && card.CanMoveToNextWeek && (string)move.ToolTip == "Move this task to Sunday of the following week",
+                    "Right-click offers a clearly labelled English next-week action with an explicit Sunday destination.");
+                card.BeginEdit();
+                Field<TextBox>(card, "editor").Text = "Edited before moving";
+                Assert(ReferenceEquals(Field<TextBox>(card, "editor").ContextMenu, card.ContextMenu),
+                    "The next-week action is also available from the active task editor.");
+                MoveMenu(card).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                var destination = state.Weeks.Single(plan => plan.WeekStart == targetKey);
+                var moved = destination.Tasks.Single(task => task.Id == "move-normal");
+                Assert(state.ActiveWeekStart == sourceKey && !state.Tasks.Any(task => task.Id == moved.Id) &&
+                    moved.Column == 7 && moved.Text == "Edited before moving" && moved.Color == "#426787" && moved.BackgroundColor == "#E4EFFA" && !moved.IsCompleted,
+                    "The menu commits active text and moves the same task, colors and state to the following Sunday without switching the view.");
+                Assert(destination.Tasks.Where(task => task.Column == 7).Select(task => task.Id).SequenceEqual(new[] { "existing-sunday", "move-normal" }),
+                    "Moving to an existing target appends after its pending Sunday tasks.");
+                Assert(undo.Count == 2 && undo.Peek().DestinationWeekStart == targetKey && undo.Peek().DestinationBefore.Tasks.Single().Id == "existing-sunday",
+                    "The move captures both weeks in one undo entry after committing the text edit.");
+                Invoke(window, "SaveNow");
+                var saved = store.Load();
+                Assert(!saved.Tasks.Any(task => task.Id == moved.Id) && saved.Weeks.Single(plan => plan.WeekStart == targetKey).Tasks.Single(task => task.Id == moved.Id).Text == moved.Text,
+                    "Saving persists the cross-week move without duplicating it in the source board.");
+                Invoke(window, "UndoTasks");
+                Assert(state.Tasks.Single(task => task.Id == moved.Id).Text == "Edited before moving" &&
+                    state.Tasks.Single(task => task.Id == moved.Id).Column == 3 &&
+                    state.Weeks.Single(plan => plan.WeekStart == targetKey).Tasks.Select(task => task.Id).SequenceEqual(new[] { "existing-sunday" }),
+                    "The Ctrl+Z command restores the source and the destination together, retaining the committed text edit.");
+
+                card = FindCard(panels, "move-daily-3");
+                MoveMenu(card).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                destination = state.Weeks.Single(plan => plan.WeekStart == targetKey);
+                Assert(destination.Tasks.Single(task => task.Id == "move-daily-3").DailyGroupId == null &&
+                    state.Tasks.Count(task => task.DailyGroupId == "synthetic-group") == 6 &&
+                    state.Tasks.Where(task => task.DailyGroupId == "synthetic-group").All(task => task.Column != 3),
+                    "Moving one daily occurrence detaches and moves only that selected copy; its six peers remain in place.");
+                Assert(destination.Tasks.Single(task => task.Id == "existing-sunday").BackgroundColor == "#DCF0E7",
+                    "A single daily move leaves existing destination tasks and their fill unchanged.");
+                Invoke(window, "UndoTasks");
+                Assert(state.Tasks.Count(task => task.DailyGroupId == "synthetic-group") == 7 &&
+                    !state.Weeks.Single(plan => plan.WeekStart == targetKey).Tasks.Any(task => task.Id == "move-daily-3"),
+                    "Undo restores the daily link and removes the moved occurrence from the destination.");
+
+                MoveMenu(FindCard(panels, "move-complete")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Assert(state.Weeks.Single(plan => plan.WeekStart == targetKey).Tasks.First().Id == "move-complete" &&
+                    state.Weeks.Single(plan => plan.WeekStart == targetKey).Tasks.First().IsCompleted,
+                    "Explicitly moving a completed task preserves completion and the destination's completed-first ordering.");
+                Invoke(window, "UndoTasks");
+                card = FindCard(panels, "move-normal");
+                card.BeginEdit();
+                Field<TextBox>(card, "editor").Text = "   ";
+                MoveMenu(card).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Assert(!state.Tasks.Any(task => task.Id == "move-normal") &&
+                    !state.Weeks.Single(plan => plan.WeekStart == targetKey).Tasks.Any(task => task.Id == "move-normal"),
+                    "Moving a cleared existing editor applies its deletion without moving the stale original text.");
+                Invoke(window, "UndoTasks");
+
+                int undoBeforeDraft = undo.Count;
+                Invoke(window, "AddTask", 0);
+                card = panels[0].Children.OfType<TaskCard>().Single(task => string.IsNullOrWhiteSpace(task.Item.Text));
+                string draftId = card.Item.Id;
+                MoveMenu(card).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Assert(!state.Tasks.Any(task => task.Id == draftId) &&
+                    !state.Weeks.SelectMany(plan => plan.Tasks).Any(task => task.Id == draftId) && undo.Count == undoBeforeDraft,
+                    "The next-week action discards a blank new draft without creating work or an undo entry.");
+                Invoke(window, "AddTask", 0);
+                card = panels[0].Children.OfType<TaskCard>().Single(task => string.IsNullOrWhiteSpace(task.Item.Text));
+                Field<TextBox>(card, "editor").Text = "Synthetic new task moved directly";
+                draftId = card.Item.Id;
+                MoveMenu(card).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Assert(state.Weeks.Single(plan => plan.WeekStart == targetKey).Tasks.Any(task => task.Id == draftId && task.Column == 7) &&
+                    !state.Tasks.Any(task => task.Id == draftId), "A nonblank new editor can commit and move directly through the context menu.");
+                Invoke(window, "SaveNow");
+                window.Close();
+                window = new MainWindow(store, () => today);
+                state = Field<BoardState>(window, "state");
+                Assert(!state.Tasks.Any(task => task.Id == draftId) &&
+                    state.Weeks.Single(plan => plan.WeekStart == targetKey).Tasks.Count(task => task.Id == draftId) == 1,
+                    "Reopening preserves a manual move exactly once in the planned week.");
+            }
+            finally { if (window != null) window.Close(); }
+
+            var freshStore = new BoardStore(Path.Combine(directory, "new-target"));
+            freshStore.Save(new BoardState { Tasks = new List<TaskItem> { new TaskItem { Id = "new-target-task", Text = "Synthetic task for an empty future", Column = 1 } } });
+            window = null;
+            try
+            {
+                window = new MainWindow(freshStore, () => today);
+                var state = Field<BoardState>(window, "state");
+                MoveMenu(FindCard(Field<ColumnPanel[]>(window, "columns"), "new-target-task")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Assert(state.Weeks.Count == 2 && state.Tasks.Count == 0, "A manual move creates its missing destination week.");
+                Invoke(window, "UndoTasks");
+                Assert(state.Weeks.Count == 1 && state.Tasks.Single().Id == "new-target-task",
+                    "Undo removes a destination created solely for the move and restores the source task.");
+            }
+            finally { if (window != null) window.Close(); }
+
+            var disabled = new TaskCard(new TaskItem { Text = "Synthetic boundary task" }) { CanMoveToNextWeek = false };
+            int disabledRequests = 0;
+            disabled.MoveToNextWeekRequested += (s, e) => disabledRequests++;
+            MoveMenu(disabled).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            Assert(!MoveMenu(disabled).IsEnabled && disabledRequests == 0,
+                "A disabled next-week menu remains discoverable but cannot move beyond the supported date range.");
+        }
+
+        private static void AssertRolloverWhileOpen(string directory)
+        {
+            // Test the date timer's real handler with a local clock and isolated
+            // stores; no machine date changes or desktop input are required.
+            foreach (int selectedOffset in new[] { -7, 0, 7 })
+            {
+                DateTime now = new DateTime(2026, 10, 18, 23, 59, 0);
+                DateTime oldMonday = WeeklyPlanner.MondayOf(now);
+                string oldKey = oldMonday.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                string newKey = oldMonday.AddDays(7).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                var store = new BoardStore(Path.Combine(directory, "selected-" + selectedOffset));
+                store.Save(new BoardState { Tasks = new List<TaskItem>
+                {
+                    new TaskItem { Id = "roll-pending", Text = "Synthetic unfinished work", Column = 2, Color = "#426787", BackgroundColor = "#E4EFFA" },
+                    new TaskItem { Id = "roll-done", Text = "Synthetic completed work", Column = 1, IsCompleted = true }
+                } });
+                MainWindow window = null;
+                try
+                {
+                    window = new MainWindow(store, () => now);
+                    Layout(window);
+                    var state = Field<BoardState>(window, "state");
+                    if (selectedOffset != 0) Invoke(window, "NavigateWeek", oldMonday.AddDays(selectedOffset));
+                    Invoke(window, "AddTask", 4);
+                    var draft = Field<ColumnPanel[]>(window, "columns")[4].Children.OfType<TaskCard>().Last();
+                    Field<TextBox>(draft, "editor").Text = "Synthetic edit at week boundary";
+                    string editedId = draft.Item.Id;
+                    now = now.AddMinutes(2);
+                    Invoke(window, "UpdateDate");
+                    string expectedKey = (selectedOffset == 0 ? oldMonday.AddDays(7) : oldMonday.AddDays(selectedOffset))
+                        .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    Assert(state.ActiveWeekStart == expectedKey,
+                        "A week boundary follows the current view while preserving an explicitly selected historical or future week.");
+                    var oldWeek = state.Weeks.Single(plan => plan.WeekStart == oldKey);
+                    var newWeek = state.Weeks.Single(plan => plan.WeekStart == newKey);
+                    Assert(oldWeek.Tasks.Single().Id == "roll-done" && newWeek.Tasks.Count(task => task.Id == "roll-pending") == 1 &&
+                        newWeek.Tasks.Single(task => task.Id == "roll-pending").Column == 7 &&
+                        newWeek.Tasks.Single(task => task.Id == "roll-pending").BackgroundColor == "#E4EFFA",
+                        "The live date handler carries unfinished work once to the new Sunday and retains completed history and task colors.");
+                    var edited = state.Weeks.SelectMany(plan => plan.Tasks).Single(task => task.Id == editedId);
+                    Assert(edited.Text == "Synthetic edit at week boundary" && edited.Column == (selectedOffset <= 0 ? 7 : 5),
+                        "The date transition commits an active draft before carrying expired work; future plans keep their chosen day.");
+                    Assert(Field<Stack<TaskUndoEntry>>(window, "undo").Count == 0 && Field<TaskCard>(window, "editing") == null,
+                        "A week transition clears stale undo history and finishes the active editor.");
+                    Invoke(window, "UpdateDate");
+                    Assert(state.Weeks.SelectMany(plan => plan.Tasks).Count(task => task.Id == "roll-pending") == 1,
+                        "Repeated date timer ticks never duplicate carried work.");
+                    Invoke(window, "SaveNow");
+                    var saved = store.Load();
+                    Assert(saved.Weeks.Single(plan => plan.WeekStart == oldKey).Tasks.Single().IsCompleted &&
+                        saved.Weeks.Single(plan => plan.WeekStart == newKey).Tasks.Any(task => task.Id == "roll-pending"),
+                        "The automatic carry and completed historical tasks persist together.");
+                }
+                finally { if (window != null) window.Close(); }
+            }
+        }
+
+        private static TaskCard FindCard(ColumnPanel[] panels, string id)
+        { return panels.SelectMany(panel => panel.Children.OfType<TaskCard>()).Single(card => card.Item.Id == id); }
+
+        private static MenuItem MoveMenu(TaskCard card)
+        { return card.ContextMenu.Items.OfType<MenuItem>().Single(item => (string)item.Header == "Move to next week"); }
 
         private static void ClickBlankDay(MainWindow window, int column)
         {
@@ -392,7 +584,7 @@ namespace TaskBoard.Tests
             ColumnPanel[] panels, string ordinaryId, string completedId)
         {
             var originalTasks = BoardOperations.CloneTasks(state.Tasks);
-            var undo = Field<Stack<List<TaskItem>>>(window, "undo");
+            var undo = Field<Stack<TaskUndoEntry>>(window, "undo");
             int originalUndoCount = undo.Count;
             double originalTargetWidth = panels[1].Width;
             bool[] animated = panels.Select(panel => panel.Animate).ToArray();
@@ -506,7 +698,7 @@ namespace TaskBoard.Tests
         private static void AssertTaskBackgroundColors(MainWindow window, BoardStore store, BoardState state,
             ColumnPanel[] panels, string ordinaryId, string dailyId)
         {
-            var undo = Field<Stack<List<TaskItem>>>(window, "undo");
+            var undo = Field<Stack<TaskUndoEntry>>(window, "undo");
             var card = panels.SelectMany(p => p.Children.OfType<TaskCard>()).Single(c => c.Item.Id == ordinaryId);
             string textColor = card.Item.Color;
             int beforeColor = undo.Count;
@@ -517,13 +709,13 @@ namespace TaskBoard.Tests
             Assert(card.Item.BackgroundColor == "#FFF4CC" && card.Item.Color == textColor &&
                 ((SolidColorBrush)card.Background).Color == Color.FromRgb(255, 244, 204),
                 "A preset fills the task border and padding without changing its text color.");
-            Assert(undo.Count == beforeColor + 1 && undo.Peek().Single(t => t.Id == ordinaryId).BackgroundColor == null,
+            Assert(undo.Count == beforeColor + 1 && undo.Peek().Tasks.Single(t => t.Id == ordinaryId).BackgroundColor == null,
                 "Changing a background records its original unfilled state for undo.");
             Invoke(window, "SaveNow");
             Assert(store.Load().Tasks.Single(t => t.Id == ordinaryId).BackgroundColor == "#FFF4CC",
                 "The selected task fill survives a UI save.");
 
-            state.Tasks = undo.Pop();
+            undo.Pop().Restore(state);
             Invoke(window, "RenderTasks");
             Invoke(window, "QueueSave");
             card = panels.SelectMany(p => p.Children.OfType<TaskCard>()).Single(c => c.Item.Id == ordinaryId);
@@ -658,7 +850,7 @@ namespace TaskBoard.Tests
                 week => week.Tasks.Select(task => task.Id).ToArray());
             string[] allIds = state.Tasks.Select(task => task.Id).ToArray();
             string[] otherDayIds = state.Tasks.Where(task => task.Column != 1).Select(task => task.Id).ToArray();
-            var undo = Field<Stack<List<TaskItem>>>(window, "undo");
+            var undo = Field<Stack<TaskUndoEntry>>(window, "undo");
             int beforeUndo = undo.Count;
             var clearButtons = Field<DayClearButton[]>(window, "clearButtons");
             Invoke(clearButtons[0], "SetRevealed", true, false);
@@ -672,7 +864,7 @@ namespace TaskBoard.Tests
             Assert(!clearButtons[0].IsAvailable && clearButtons.Skip(1).All(clear => clear.IsAvailable) &&
                 clearButtons.All(clear => Math.Abs(clear.ActualHeight - 40) < 1),
                 "Clearing an empty day disables its action while every fixed footer keeps its height.");
-            Assert(undo.Count == beforeUndo + 1 && undo.Peek().Select(task => task.Id).SequenceEqual(allIds),
+            Assert(undo.Count == beforeUndo + 1 && undo.Peek().Tasks.Select(task => task.Id).SequenceEqual(allIds),
                 "Day clear records one complete undo snapshot with the removed tasks.");
             foreach (var week in state.Weeks.Where(week => week.WeekStart != activeKey))
                 Assert(week.Tasks.Select(task => task.Id).SequenceEqual(otherWeeks[week.WeekStart]),
@@ -685,7 +877,7 @@ namespace TaskBoard.Tests
             Invoke(window, "ClearDay", 0);
             Assert(undo.Count == beforeUndo + 1, "Clearing an already empty day creates no extra undo entry.");
 
-            state.Tasks = undo.Pop();
+            undo.Pop().Restore(state);
             Invoke(window, "RenderTasks");
             Invoke(window, "QueueSave");
             Invoke(window, "SaveNow");
@@ -705,11 +897,11 @@ namespace TaskBoard.Tests
             var previous = navigation.Single(b => AutomationProperties.GetName(b) == "Previous week");
             var next = navigation.Single(b => AutomationProperties.GetName(b) == "Next week");
             var current = navigation.Single(b => AutomationProperties.GetName(b) == "This week");
-            int undoCount = Field<Stack<List<TaskItem>>>(window, "undo").Count;
+            int undoCount = Field<Stack<TaskUndoEntry>>(window, "undo").Count;
             current.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert(Field<Stack<List<TaskItem>>>(window, "undo").Count == undoCount, "Returning to an already selected current week preserves undo.");
+            Assert(Field<Stack<TaskUndoEntry>>(window, "undo").Count == undoCount, "Returning to an already selected current week preserves undo.");
             Invoke(window, "NavigateWeek", baseWeek.AddDays(3));
-            Assert(Field<Stack<List<TaskItem>>>(window, "undo").Count == undoCount, "Selecting another date in the same week preserves undo.");
+            Assert(Field<Stack<TaskUndoEntry>>(window, "undo").Count == undoCount, "Selecting another date in the same week preserves undo.");
             next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Layout(window);
             Assert(WeeklyPlanner.CurrentWeekStart(state) == futureWeek,
