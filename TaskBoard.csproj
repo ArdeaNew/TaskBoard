@@ -1,0 +1,19 @@
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <AssemblyName>TaskBoard</AssemblyName><RootNamespace>TaskBoard</RootNamespace>
+    <OutputPath>artifacts\app\</OutputPath><LangVersion>7.3</LangVersion><Optimize>true</Optimize>
+    <ApplicationManifest>src\TaskBoard\app.manifest</ApplicationManifest><AppConfig>src\TaskBoard\App.config</AppConfig>
+    <ApplicationIcon>assets\TaskBoard.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System"/><Reference Include="System.Core"/><Reference Include="System.Xml"/>
+    <Reference Include="System.Xaml"/><Reference Include="System.Runtime.Serialization"/>
+    <Reference Include="WindowsBase"/><Reference Include="PresentationCore"/><Reference Include="PresentationFramework"/>
+    <Reference Include="System.Printing"/><Reference Include="ReachFramework"/>
+    <Compile Include="src\TaskBoard\**\*.cs"/>
+    <None Include="src\TaskBoard\App.config"/>
+    <None Include="assets\TaskBoard.ico"/><None Include="assets\TaskBoard.svg"/>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
+</Project>
