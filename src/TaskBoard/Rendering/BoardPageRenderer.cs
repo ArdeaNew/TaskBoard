@@ -15,6 +15,8 @@ namespace TaskBoard.Rendering
         private const double PreferredFontSize = 14.0;
         private static readonly IReadOnlyList<string> Headers = BoardLabels.DayNames;
         private static readonly Brush CompletedBrush = MakeBrush("#002FA7");
+        private static readonly Brush CompletedBackgroundBrush = MakeBrush("#E6E6E6");
+        private static readonly Brush TodayColumnBrush = MakeBrush("#F0FBE0");
         private static readonly Pen BoxOutline = MakePen("#DDDDDD", 0.6);
 
         /// <summary>Creates an A4 landscape page without opening a printer dialog.</summary>
@@ -74,14 +76,36 @@ namespace TaskBoard.Rendering
                 var border = new Pen(Brushes.Black, 1.1);
                 border.Freeze();
                 double dividerY = board.Top + headerHeight;
+                DateTime selectedMonday = SelectedMonday(state, localNow);
+                int todayColumn = selectedMonday == WeeklyPlanner.MondayOf(localNow)
+                    ? ((int)localNow.DayOfWeek + 6) % 7 : -1;
+                if (todayColumn >= 0)
+                {
+                    double todayX = board.Left + todayColumn * columnWidth;
+                    drawing.DrawRectangle(TodayColumnBrush, null,
+                        new Rect(todayX, board.Top, columnWidth, board.Height));
+                }
 
                 for (int column = 0; column < Headers.Count; column++)
                 {
                     double x = board.Left + column * columnWidth;
                     var header = CreateText(Headers[column], 12, Brushes.Black, columnWidth - 8);
+                    DateTime headerDate = selectedMonday <= DateTime.MaxValue.Date.AddDays(-column)
+                        ? selectedMonday.AddDays(column) : DateTime.MaxValue.Date;
+                    bool isToday = todayColumn == column;
+                    if (isToday)
+                    {
+                        var today = CreateText("Today", 9, MakeBrush("#70804F"), columnWidth - 8);
+                        DrawTextOutline(drawing, visual, "Today", today, MakeBrush("#70804F"),
+                            new Point(x + (columnWidth - today.Width) / 2, board.Top + 2));
+                    }
                     DrawTextOutline(drawing, visual, Headers[column], header, Brushes.Black,
                         new Point(x + (columnWidth - header.Width) / 2,
-                            board.Top + (headerHeight - header.Height) / 2));
+                            board.Top + (isToday ? 14 : 8)));
+                    var date = CreateText(BoardLabels.Date(headerDate), 9, Brushes.Black, columnWidth - 8);
+                    DrawTextOutline(drawing, visual, BoardLabels.Date(headerDate), date, Brushes.Black,
+                        new Point(x + (columnWidth - date.Width) / 2,
+                            board.Top + (isToday ? 29 : 26)));
 
                     double y = dividerY;
                     for (int taskIndex = 0; taskIndex < columns[column].Count; taskIndex++)
@@ -92,7 +116,7 @@ namespace TaskBoard.Rendering
                         var text = CreateText(label, fontSize, foreground,
                             TaskTextWidth(task, columnWidth, fontSize));
                         double boxHeight = text.Height + fontSize * 0.92;
-                        drawing.DrawRectangle(GetBrush(task.BackgroundColor, Brushes.White), null,
+                        drawing.DrawRectangle(GetTaskBackground(task), null,
                             new Rect(x, y, columnWidth, boxHeight));
                         drawing.DrawLine(BoxOutline, new Point(x, y + boxHeight),
                             new Point(x + columnWidth, y + boxHeight));
@@ -249,6 +273,22 @@ namespace TaskBoard.Rendering
             {
                 return fallback;
             }
+        }
+
+        private static Brush GetTaskBackground(TaskItem task)
+        {
+            if (task == null) return Brushes.White;
+            // Explicit task fills remain authoritative. The completion fill is
+            // the default only for completed tasks without a custom fill.
+            return task.IsCompleted ? CompletedBackgroundBrush : GetBrush(task.BackgroundColor, Brushes.White);
+        }
+
+        private static DateTime SelectedMonday(BoardState state, DateTime localNow)
+        {
+            DateTime selected;
+            if (!DateTime.TryParseExact(state.ActiveWeekStart, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out selected)) selected = localNow;
+            return WeeklyPlanner.MondayOf(selected);
         }
 
         private static bool IsPositiveFinite(double value)

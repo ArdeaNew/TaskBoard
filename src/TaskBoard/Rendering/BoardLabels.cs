@@ -13,6 +13,11 @@ namespace TaskBoard.Rendering
 
         public static IReadOnlyList<string> DayNames { get { return dayNames; } }
 
+        public static string Date(DateTime date)
+        {
+            return date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture);
+        }
+
         public static string Week(DateTime date)
         {
             DateMetrics metrics = DateMetrics.From(date);

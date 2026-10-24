@@ -276,8 +276,8 @@ namespace TaskBoard.Tests
             BoardPage page = Build(state, new Rect(new Point(), A4));
             GeometryDrawing[] boxes = TaskBoxes(page).ToArray();
             Assert(boxes.Length == 4, "Each task has its own full-block background.");
-            Assert(BrushColor(boxes[0].Brush, "#FFF2CC") && BrushColor(boxes[2].Brush, "#DDEBF7"),
-                "Independent task background colors are preserved in vector output.");
+            Assert(BrushColor(boxes[0].Brush, "#FFF2CC") && BrushColor(boxes[2].Brush, "#E6E6E6"),
+                "Completed task blocks use the neutral completion fill in vector output.");
             Assert(BrushColor(boxes[1].Brush, "#FFFFFF") && BrushColor(boxes[3].Brush, "#FFFFFF"),
                 "Unset and malformed background colors safely use white.");
             foreach (GeometryDrawing box in boxes)
@@ -368,7 +368,8 @@ namespace TaskBoard.Tests
         {
             return Leaves(page.Drawing).OfType<GeometryDrawing>().Where(item =>
                 item.Geometry is RectangleGeometry && item.Pen == null &&
-                item.Geometry.Bounds.Width > 30 && !IsPaper(item));
+                item.Geometry.Bounds.Width > 30 && !IsPaper(item) &&
+                !BrushColor(item.Brush, "#F0FBE0"));
         }
 
         private static IEnumerable<Drawing> Leaves(Drawing drawing)

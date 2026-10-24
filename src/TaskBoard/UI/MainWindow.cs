@@ -29,6 +29,11 @@ namespace TaskBoard.UI
         private readonly ColumnPanel[] columns = new ColumnPanel[7];
         private readonly ScrollViewer[] scrollers = new ScrollViewer[7];
         private readonly DayClearButton[] clearButtons = new DayClearButton[7];
+        private readonly Border[] dayHeaders = new Border[7];
+        private readonly Border[] dayCells = new Border[7];
+        private readonly TextBlock[] dayTodayLabels = new TextBlock[7];
+        private readonly TextBlock[] dayDates = new TextBlock[7];
+        private static readonly Brush todayColumnBrush = FrozenBrush("#F0FBE0");
         private readonly TextBlock week = new TextBlock();
         private readonly TextBlock remaining = new TextBlock();
         private Button previousWeekButton;
@@ -176,10 +181,23 @@ namespace TaskBoard.UI
             {
                 int column = i;
                 board.ColumnDefinitions.Add(new ColumnDefinition());
-                var head = new Grid { Background = Brushes.White };
-                var label = new TextBlock { Text = labels[i], HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 14 };
+                var head = new Grid { Background = Brushes.Transparent };
+                head.RowDefinitions.Add(new RowDefinition());
+                head.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                head.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var todayLabel = new TextBlock { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, FontSize = 10, FontWeight = FontWeights.SemiBold, Foreground = FrozenBrush("#70804F"), Margin = new Thickness(0, 3, 0, 0) };
+                var label = new TextBlock { Text = labels[i], HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, FontSize = 14 };
+                var date = new TextBlock { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, FontSize = 11, Foreground = FrozenBrush("#6A6A6A"), Margin = new Thickness(0, 1, 0, 6) };
+                Grid.SetRow(todayLabel, 0);
+                Grid.SetRow(label, 1);
+                Grid.SetRow(date, 2);
+                dayTodayLabels[i] = todayLabel;
                 head.Children.Add(label);
-                var header = new Border { Child = head, BorderBrush = Brushes.Black, BorderThickness = new Thickness(i == 0 ? 0 : 1.4, 0, 0, 1.4) };
+                head.Children.Add(todayLabel);
+                head.Children.Add(date);
+                var header = new Border { Child = head, BorderBrush = Brushes.Black, Background = Brushes.White, BorderThickness = new Thickness(i == 0 ? 0 : 1.4, 0, 0, 1.4) };
+                dayHeaders[i] = header;
+                dayDates[i] = date;
                 Grid.SetColumn(header, i);
                 board.Children.Add(header);
                 columns[i] = new ColumnPanel { Background = Brushes.Transparent };
@@ -198,6 +216,7 @@ namespace TaskBoard.UI
                 Grid.SetRow(clearButtons[i], 1);
                 body.Children.Add(clearButtons[i]);
                 var cell = new Border { BorderBrush = Brushes.Black, BorderThickness = new Thickness(i == 0 ? 0 : 1.4, 0, 0, 0), Child = body, Background = Brushes.White };
+                dayCells[i] = cell;
                 AutomationProperties.SetName(cell, labels[i]);
                 cell.MouseLeftButtonDown += (s, e) =>
                 {
@@ -208,6 +227,30 @@ namespace TaskBoard.UI
                 Grid.SetColumn(cell, i);
                 Grid.SetRow(cell, 1);
                 board.Children.Add(cell);
+            }
+        }
+
+        private static Brush FrozenBrush(string value)
+        {
+            var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(value));
+            brush.Freeze();
+            return brush;
+        }
+
+        private void UpdateDayVisuals(DateTime selectedMonday)
+        {
+            DateTime today = localNow().Date;
+            bool currentWeek = selectedMonday == WeeklyPlanner.MondayOf(today);
+            for (int column = 0; column < dayDates.Length; column++)
+            {
+                DateTime date = selectedMonday <= DateTime.MaxValue.Date.AddDays(-column)
+                    ? selectedMonday.AddDays(column) : DateTime.MaxValue.Date;
+                dayDates[column].Text = BoardLabels.Date(date);
+                bool isToday = currentWeek && date == today;
+                dayTodayLabels[column].Text = isToday ? "Today" : string.Empty;
+                Brush fill = isToday ? todayColumnBrush : Brushes.White;
+                dayHeaders[column].Background = fill;
+                dayCells[column].Background = fill;
             }
         }
 
@@ -443,6 +486,7 @@ namespace TaskBoard.UI
                 QueueSave();
             }
             var selected = WeeklyPlanner.CurrentWeekStart(state);
+            UpdateDayVisuals(selected);
             week.Text = BoardLabels.Week(selected);
             var end = selected <= DateTime.MaxValue.Date.AddDays(-6) ? selected.AddDays(6) : DateTime.MaxValue.Date;
             chooseWeekButton.ToolTip = selected.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture) + " — " + end.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture);

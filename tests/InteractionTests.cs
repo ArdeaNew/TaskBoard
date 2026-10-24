@@ -85,6 +85,9 @@ namespace TaskBoard.Tests
                 var completionColor = Field<Border>(completed, "completionSquare").Background as SolidColorBrush;
                 Assert(completionColor != null && completionColor.Color == Color.FromRgb(0, 47, 167),
                     "Completed task square uses Klein blue.");
+                var completionBackground = completed.Background as SolidColorBrush;
+                Assert(completionBackground != null && completionBackground.Color == Color.FromRgb(230, 230, 230),
+                    "Completed task block uses a medium-light gray background.");
                 Assert(Field<TextBlock>(completed, "display").TextDecorations == null ||
                     Field<TextBlock>(completed, "display").TextDecorations.Count == 0,
                     "Completed task text has no strike-through.");
@@ -531,9 +534,28 @@ namespace TaskBoard.Tests
             Assert(string.Equals(window.Language.IetfLanguageTag, "en-US", StringComparison.OrdinalIgnoreCase),
                 "The application chrome uses English independently of the Windows language.");
             var board = Field<Grid>(window, "board");
-            string[] headers = board.Children.OfType<Border>().Where(element => Grid.GetRow(element) == 0)
-                .OrderBy(element => Grid.GetColumn(element)).Select(element => Descendants<TextBlock>(element).Single().Text).ToArray();
-            Assert(headers.SequenceEqual(BoardLabels.DayNames), "All seven weekday headers use the shared English labels.");
+            var headers = board.Children.OfType<Border>().Where(element => Grid.GetRow(element) == 0)
+                .OrderBy(element => Grid.GetColumn(element)).ToArray();
+            string[] names = headers.Select(element => Descendants<TextBlock>(element).First().Text).ToArray();
+            Assert(names.SequenceEqual(BoardLabels.DayNames), "All seven weekday headers use the shared English labels.");
+            DateTime selectedMonday = WeeklyPlanner.CurrentWeekStart(Field<BoardState>(window, "state"));
+            for (int column = 0; column < headers.Length; column++)
+            {
+                string date = Descendants<TextBlock>(headers[column]).Skip(2).Single().Text;
+                Assert(date == BoardLabels.Date(selectedMonday.AddDays(column)), "Each weekday header shows its calendar date.");
+            }
+            var cells = Field<Border[]>(window, "dayCells");
+            int todayColumn = ((int)DateTime.Today.DayOfWeek + 6) % 7;
+            for (int column = 0; column < cells.Length; column++)
+            {
+                var fill = cells[column].Background as SolidColorBrush;
+                bool highlighted = fill != null && fill.Color == Color.FromRgb(240, 251, 224);
+                Assert(highlighted == (selectedMonday == WeeklyPlanner.MondayOf(DateTime.Today) && column == todayColumn),
+                    "Only today's column uses the pale green highlight.");
+                string todayLabel = Descendants<TextBlock>(headers[column]).Skip(1).First().Text;
+                Assert(todayLabel == ((selectedMonday == WeeklyPlanner.MondayOf(DateTime.Today) && column == todayColumn) ? "Today" : string.Empty),
+                    "Today appears above the current weekday only.");
+            }
             var current = Descendants<Button>((DependencyObject)window.Content)
                 .Single(button => AutomationProperties.GetName(button) == "This week");
             Assert((string)current.Content == "This week", "The current-week action clearly says This week instead of using a home symbol.");
@@ -719,7 +741,7 @@ namespace TaskBoard.Tests
             Invoke(window, "RenderTasks");
             Invoke(window, "QueueSave");
             card = panels.SelectMany(p => p.Children.OfType<TaskCard>()).Single(c => c.Item.Id == ordinaryId);
-            Assert(card.Item.BackgroundColor == null && ((SolidColorBrush)card.Background).Color == Colors.White,
+            Assert(card.Item.BackgroundColor == null && ((SolidColorBrush)card.Background).Color == Colors.Transparent,
                 "Applying the undo snapshot restores the task's unfilled appearance.");
             palette = OpenTaskPalette(card, true);
             var hex = Descendants<TextBox>(palette.Child).Single();

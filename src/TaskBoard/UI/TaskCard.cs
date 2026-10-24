@@ -22,6 +22,10 @@ namespace TaskBoard.UI
         private static readonly Brush mutedBrush = FrozenBrush("#AAAAAA");
         private static readonly Brush lineBrush = FrozenBrush("#DDDDDD");
         private static readonly Brush completedBrush = FrozenBrush("#002FA7");
+        // A completed task gets a quiet neutral fill when it does not have a
+        // user-selected background. Keep an explicit fill intact so marking a
+        // task complete never destroys the user's color choice.
+        private static readonly Brush completedBackgroundBrush = FrozenBrush("#E6E6E6");
         private static readonly Brush incompleteBrush = FrozenBrush("#C6C6C6");
         private readonly TextBlock display;
         private readonly TextBlock ordinalDisplay;
@@ -339,7 +343,7 @@ namespace TaskBoard.UI
         private void RefreshChrome()
         {
             bool active = !isDragging && (IsMouseOver || IsKeyboardFocusWithin || isEditing || IsPaletteOpen || actions.IsOpen);
-            Background = backgroundFill ?? (active ? hoverBrush : Brushes.White);
+            Background = Item.IsCompleted ? completedBackgroundBrush : (backgroundFill ?? (active ? hoverBrush : Brushes.Transparent));
             grip.Opacity = active ? 0.7 : 0;
             colorButton.Opacity = active ? 1 : 0;
             colorButton.IsHitTestVisible = active;

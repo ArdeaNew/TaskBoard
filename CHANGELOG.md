@@ -1,5 +1,15 @@
 # 更新记录 / Changelog
 
+## 1.6.3
+
+- Lighten the current-day column and add a quiet `Today` label above its date.
+- Refresh the visual guide with a short bilingual feature overview and an animated demonstration.
+
+## 1.6.2
+
+- 显示星期下方的日期，并以淡绿色标记当天列；完成任务使用中浅灰色块。
+  Show the date below each weekday, highlight today with a soft green, and use a medium-light gray fill for completed tasks.
+
 ## 1.6.1
 
 - 优化代码结构与运行效率，保持原有功能和数据兼容。

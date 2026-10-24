@@ -181,8 +181,8 @@ namespace TaskBoard.Tests
                     Assert(Math.Abs(expected - actual) <= Math.Max(8, expected * 0.025),
                         "CJK and Latin outline ink is preserved after print serialization: " + run.Text + ".");
                 }
-                Assert(SamplePixel(restored, new Point(35, 110)) == Color.FromRgb(255, 242, 204),
-                    "Full task background fill survives XPS serialization.");
+                Assert(SamplePixel(restored, new Point(35, 110)) == Color.FromRgb(230, 230, 230),
+                    "Completed task gray fill survives XPS serialization.");
                 SaveBitmap(restored, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "print-xps-preview.png"));
             }
         }
